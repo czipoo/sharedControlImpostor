@@ -1,0 +1,78 @@
+name: sharedControlImpostor
+version: '1.0-SNAPSHOT'
+main: com.czipo.sharedControlImpostor.SharedControlImpostor
+api-version: '1.21.11'
+load: POSTWORLD
+description: A Minecraft mini-game where players share control of a character with impostors among them.
+commands:
+  regis:
+    description: Register a player to the game
+    usage: /regis [player]
+    permission: sci.regis
+  regisall:
+    description: Register all online players to the game
+    usage: /regisall
+    permission: sci.regisall
+  unregis:
+    description: Remove a player from the game registration
+    usage: /unregis [player]
+    permission: sci.unregis
+  start:
+    description: Start the game
+    usage: /start
+    permission: sci.start
+  meeting:
+    description: Call a meeting during gameplay
+    usage: /meeting
+    permission: sci.meeting
+  settimer:
+    description: Set turn timer in seconds (default 15)
+    usage: /settimer <seconds>
+    permission: sci.settimer
+  setimpostor:
+    description: Set the number of impostors
+    usage: /setimpostor <count>
+    permission: sci.setimpostor
+  endgame:
+    description: End the current game and return to lobby
+    usage: /endgame
+    permission: sci.endgame
+  listplayer:
+    description: Show list of registered players
+    usage: /listplayer
+    permission: sci.listplayer
+  commandinfo:
+    description: Show command information and current settings
+    usage: /commandinfo
+    permission: sci.commandinfo
+permissions:
+  sci.regis:
+    description: Allows registering players to the game
+    default: op
+  sci.regisall:
+    description: Allows registering all online players
+    default: op
+  sci.unregis:
+    description: Allows removing players from the game
+    default: op
+  sci.start:
+    description: Allows starting the game
+    default: op
+  sci.meeting:
+    description: Allows calling meetings
+    default: true
+  sci.settimer:
+    description: Allows setting turn timer
+    default: op
+  sci.setimpostor:
+    description: Allows setting impostor count
+    default: op
+  sci.endgame:
+    description: Allows ending the game
+    default: op
+  sci.listplayer:
+    description: Allows viewing registered player list
+    default: true
+  sci.commandinfo:
+    description: Allows viewing command info
+    default: op
