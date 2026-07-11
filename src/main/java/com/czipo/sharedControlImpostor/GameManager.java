@@ -49,6 +49,8 @@ public class GameManager {
     private VoteManager voteManager;
     private ScoreboardManager scoreboardManager;
     private WorldManager worldManager;
+    private SettingsManager settingsManager;
+    private ObjectiveManager objectiveManager;
 
     public GameManager(SharedControlImpostor plugin) {
         this.plugin = plugin;
@@ -62,11 +64,15 @@ public class GameManager {
     public void setVoteManager(VoteManager voteManager) { this.voteManager = voteManager; }
     public void setScoreboardManager(ScoreboardManager scoreboardManager) { this.scoreboardManager = scoreboardManager; }
     public void setWorldManager(WorldManager worldManager) { this.worldManager = worldManager; }
+    public void setSettingsManager(SettingsManager settingsManager) { this.settingsManager = settingsManager; }
+    public void setObjectiveManager(ObjectiveManager objectiveManager) { this.objectiveManager = objectiveManager; }
 
     public TurnManager getTurnManager() { return turnManager; }
     public VoteManager getVoteManager() { return voteManager; }
     public ScoreboardManager getScoreboardManager() { return scoreboardManager; }
     public WorldManager getWorldManager() { return worldManager; }
+    public SettingsManager getSettingsManager() { return settingsManager; }
+    public ObjectiveManager getObjectiveManager() { return objectiveManager; }
 
     public SharedControlImpostor getPlugin() { return plugin; }
 
@@ -154,9 +160,9 @@ public class GameManager {
      * 9+ players = 3 impostor max (roughly 1/3)
      */
     public int getMaxImpostorCount(int playerCount) {
-        if (playerCount <= 3) return 1;
-        if (playerCount <= 8) return 2;
-        return Math.max(1, playerCount / 3);
+        // Formula: floor((playerCount - 1) / 3), minimum 1
+        // 3-6 = 1, 7-9 = 2, 10-12 = 3, etc.
+        return Math.max(1, (playerCount - 1) / 3);
     }
 
     // ===== Turn Time =====
@@ -167,6 +173,7 @@ public class GameManager {
 
     // ===== Meeting Cooldown =====
     public int getMeetingCooldownSeconds() { return meetingCooldownSeconds; }
+    public void setMeetingCooldownSeconds(int seconds) { this.meetingCooldownSeconds = seconds; }
 
     /**
      * Get the reference time for cooldown calculation.
@@ -202,10 +209,6 @@ public class GameManager {
     public int getTurnNumber() { return turnNumber; }
     public void setTurnNumber(int turnNumber) { this.turnNumber = turnNumber; }
 
-    // ===== Objective =====
-    public Objective getCurrentObjective() { return currentObjective; }
-    public void setCurrentObjective(Objective objective) { this.currentObjective = objective; }
-
     // ===== First Move Tracking =====
     public boolean isWaitingForFirstMove() { return waitingForFirstMove; }
     public void setWaitingForFirstMove(boolean waiting) { this.waitingForFirstMove = waiting; }
@@ -215,6 +218,8 @@ public class GameManager {
     public void setSavedGameState(SavedGameState savedGameState) { this.savedGameState = savedGameState; }
 
     public void setGameStartTime(long time) { this.gameStartTime = time; }
+    
+    public void setLastMeetingEndTime(long time) { this.lastMeetingEndTime = time; }
 
     // ===== Start Game =====
     public void startGame() {
@@ -224,17 +229,27 @@ public class GameManager {
             return;
         }
 
-        // Validate impostor count
-        int maxImpostors = getMaxImpostorCount(registered.size());
+        // Set state to playing early to prevent duplicate starts and Lobby events
+        gameState = GameState.PLAYING;
+
+        // Check maximum impostor limit
+        int maxImpostors = getMaxImpostorCount(getRegisteredPlayerCount());
         if (impostorCount > maxImpostors) {
             impostorCount = maxImpostors;
-            Bukkit.broadcast(Component.text("Impostor count adjusted to " + impostorCount + " for balance.").color(NamedTextColor.YELLOW));
         }
         if (impostorCount >= registered.size()) {
             Bukkit.broadcast(Component.text("Too many impostors for this player count!").color(NamedTextColor.RED));
             return;
         }
         
+        // Close OP inventory and remove Settings item before game starts
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (p.isOp()) {
+                p.closeInventory();
+                p.getInventory().setItem(4, null);
+            }
+        }
+
         // Reset meeting quotas
         playersWhoCalledMeeting.clear();
 
@@ -256,36 +271,42 @@ public class GameManager {
         for (PlayerData pd : playerDataMap.values()) {
             pd.setEliminated(false);
             pd.clearVote();
+            Player p = Bukkit.getPlayer(pd.getPlayerId());
+            if (p != null) p.getInventory().clear();
         }
 
-        // Pick a random objective from config
-        List<Objective.ObjectiveTemplate> templates = Objective.loadFromConfig(plugin.getConfig());
-        Collections.shuffle(templates);
-        currentObjective = templates.get(0).create();
+        // Assign objectives using ObjectiveManager
+        objectiveManager.assignObjectives();
 
-        // Gacha Animation before starting
+        // Role reveal animation
         new org.bukkit.scheduler.BukkitRunnable() {
             int ticks = 0;
-            final int maxTicks = 40; // 2 seconds of fast shuffling (every 2 ticks)
+            final int maxTicks = 60; // 3 seconds of alternating animation (every 2 ticks)
+            boolean showImpostor = false;
 
             @Override
             public void run() {
                 if (ticks < maxTicks) {
-                    // Shuffling animation
+                    // Alternating animation between INVESTIGATOR and IMPOSTOR
+                    showImpostor = !showImpostor;
                     for (PlayerData pd : registered) {
                         Player player = Bukkit.getPlayer(pd.getPlayerId());
                         if (player != null) {
-                            String randomRole = Math.random() > 0.5 ? "IMPOSTOR" : "INVESTIGATOR";
-                            NamedTextColor color = randomRole.equals("IMPOSTOR") ? NamedTextColor.RED : NamedTextColor.GREEN;
-                            
-                            net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
-                                Component.text(randomRole).color(color).decorate(TextDecoration.BOLD),
-                                Component.empty(),
-                                net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(500), java.time.Duration.ZERO)
-                            );
-                            player.showTitle(title);
-                            player.playSound(player.getLocation(), org.bukkit.Sound.UI_BUTTON_CLICK, 1.0f, 2.0f);
+                            if (showImpostor) {
+                                player.showTitle(net.kyori.adventure.title.Title.title(
+                                        Component.text("IMPOSTOR").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
+                                        Component.text(" "),
+                                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(300), java.time.Duration.ZERO)
+                                ));
+                            } else {
+                                player.showTitle(net.kyori.adventure.title.Title.title(
+                                        Component.text("INVESTIGATOR").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
+                                        Component.text(" "),
+                                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(300), java.time.Duration.ZERO)
+                                ));
+                            }
                         }
+                        player.playSound(player.getLocation(), org.bukkit.Sound.UI_BUTTON_CLICK, 0.5f, 1.5f);
                     }
                     ticks += 2;
                 } else {
@@ -294,21 +315,25 @@ public class GameManager {
                         Player player = Bukkit.getPlayer(pd.getPlayerId());
                         if (player != null) {
                             if (pd.isImpostor()) {
-                                net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
-                                    Component.text("IMPOSTOR").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
-                                    Component.text("Clue: " + currentObjective.getClue()).color(NamedTextColor.YELLOW),
-                                    net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(250), java.time.Duration.ofSeconds(3), java.time.Duration.ofSeconds(1))
-                                );
-                                player.showTitle(title);
-                                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_GROWL, 1.0f, 1.0f);
+                                player.showTitle(net.kyori.adventure.title.Title.title(
+                                        Component.text("IMPOSTOR").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
+                                        Component.text("Hentikan Investigator menyelesaikan objektifnya!").color(NamedTextColor.GRAY),
+                                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(500), java.time.Duration.ofSeconds(4), java.time.Duration.ofSeconds(1))
+                                ));
+                                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
                             } else {
-                                net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
-                                    Component.text("INVESTIGATOR").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
-                                    Component.text(currentObjective.getDescription()).color(NamedTextColor.WHITE),
-                                    net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(250), java.time.Duration.ofSeconds(3), java.time.Duration.ofSeconds(1))
-                                );
-                                player.showTitle(title);
-                                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+                                // Get the player's objective description
+                                String objDesc = "Selesaikan objektifmu!";
+                                if (objectiveManager != null) {
+                                    List<Objective> objs = objectiveManager.getPlayerObjectives(pd.getPlayerId());
+                                    if (!objs.isEmpty()) objDesc = objs.get(0).getDescription();
+                                }
+                                player.showTitle(net.kyori.adventure.title.Title.title(
+                                        Component.text("INVESTIGATOR").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
+                                        Component.text(objDesc).color(NamedTextColor.YELLOW),
+                                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(500), java.time.Duration.ofSeconds(4), java.time.Duration.ofSeconds(1))
+                                ));
+                                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1f, 1f);
                             }
                         }
                     }
@@ -317,14 +342,21 @@ public class GameManager {
 
                     // Start the game logic after a short delay to let players read their role
                     Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                        gameState = GameState.PLAYING;
                         meetingCooldownActive = false;
                         lastMeetingEndTime = 0;
                         turnNumber = 0;
                         waitingForFirstMove = true;
 
-                        worldManager.teleportToSurvivalWorld(registered);
-                        
+                        for (PlayerData pd : registered) {
+                            Player player = Bukkit.getPlayer(pd.getPlayerId());
+                            if (player != null) {
+                                player.getInventory().clear();
+                                player.setHealth(20.0);
+                                player.setFoodLevel(20);
+                                player.setSaturation(5.0f);
+                            }
+                        }
+
                         // Play teleport sound
                         for (PlayerData pd : registered) {
                             Player player = Bukkit.getPlayer(pd.getPlayerId());
@@ -333,9 +365,35 @@ public class GameManager {
                             }
                         }
 
+                        // Send impostor team notification if multiple impostors
+                        List<PlayerData> impostorList = registered.stream()
+                                .filter(PlayerData::isImpostor)
+                                .collect(Collectors.toList());
+                        if (impostorList.size() >= 2) {
+                            for (PlayerData pd : impostorList) {
+                                Player pImpl = Bukkit.getPlayer(pd.getPlayerId());
+                                if (pImpl == null) continue;
+                                // Build list of other impostors
+                                List<String> otherNames = impostorList.stream()
+                                        .filter(other -> !other.getPlayerId().equals(pd.getPlayerId()))
+                                        .map(PlayerData::getPlayerName)
+                                        .collect(Collectors.toList());
+                                String message;
+                                if (otherNames.size() == 1) {
+                                    message = "Kamu dan " + otherNames.get(0) + " adalah ";
+                                } else {
+                                    String joined = String.join(", ", otherNames.subList(0, otherNames.size() - 1))
+                                            + " dan " + otherNames.get(otherNames.size() - 1);
+                                    message = "Kamu, " + joined + " adalah ";
+                                }
+                                pImpl.sendMessage(Component.text(message).color(NamedTextColor.WHITE)
+                                        .append(Component.text("IMPOSTOR").color(NamedTextColor.RED).decorate(TextDecoration.BOLD)));
+                            }
+                        }
+
                         turnManager.startNextTurn();
                         scoreboardManager.startUpdates();
-                    }, 60L); // 3 seconds delay
+                    }, 80L); // 4 seconds delay
                 }
             }
         }.runTaskTimer(plugin, 0L, 2L);
@@ -349,7 +407,6 @@ public class GameManager {
 
         gameState = GameState.LOBBY;
         currentActivePlayerId = null;
-        currentObjective = null;
         savedGameState = null;
         meetingCooldownActive = false;
 
@@ -369,38 +426,85 @@ public class GameManager {
         for (Player p : Bukkit.getOnlinePlayers()) {
             if (p.isOp()) {
                 p.sendMessage(Component.text("GAME BERAKHIR! Gunakan /start untuk memulai game baru").color(NamedTextColor.YELLOW));
+                if (settingsManager != null) settingsManager.giveSettingsItem(p);
             }
         }
     }
 
+    public void checkWinConditions() {
+        if (!isPlaying()) return;
+        String sep = "§8========================================";
 
-
-    // ===== Win Condition Checks =====
-    public WinCheckResult checkWinCondition() {
-        List<PlayerData> activeImpostors = getActivePlayers().stream()
-                .filter(PlayerData::isImpostor)
-                .collect(Collectors.toList());
-
-        List<PlayerData> activeInvestigators = getActivePlayers().stream()
-                .filter(PlayerData::isInvestigator)
-                .collect(Collectors.toList());
-
-        if (activeImpostors.isEmpty()) {
-            return new WinCheckResult(WinType.INVESTIGATORS_WIN, "Investigator Menang! Semua impostor telah tereliminasi!");
+        // Count active investigators and active impostors
+        int activeInvestigators = 0;
+        int activeImpostors = 0;
+        for (PlayerData pd : playerDataMap.values()) {
+            if (pd.isActive()) {
+                if (pd.isImpostor()) activeImpostors++;
+                else activeInvestigators++;
+            }
         }
-        if (activeInvestigators.size() <= 1) {
-            return new WinCheckResult(WinType.IMPOSTOR_WIN, "Impostor Menang! Hanya tersisa " + activeInvestigators.size() + " investigator!");
+
+        // Impostors win if no investigators left, or investigators <= impostors
+        if (activeInvestigators == 0 || activeInvestigators <= activeImpostors) {
+            // Impostors win
+            // Find impostor names for display
+            StringBuilder impostorNames = new StringBuilder();
+            for (PlayerData pd : playerDataMap.values()) {
+                if (pd.isImpostor()) {
+                    if (impostorNames.length() > 0) impostorNames.append(", ");
+                    impostorNames.append(pd.getPlayerName());
+                }
+            }
+            Bukkit.broadcast(Component.text(sep));
+            Bukkit.broadcast(Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
+            Bukkit.broadcast(Component.text(impostorNames.toString() + " adalah impostor").color(NamedTextColor.GRAY));
+            Bukkit.broadcast(Component.text(sep));
+            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_DEATH, 1f, 1f);
+            endGame();
+            return;
         }
-        return new WinCheckResult(WinType.NO_WIN, null);
+
+        // Check if objective is completed
+        if (objectiveManager != null && objectiveManager.areAllObjectivesCompleted()) {
+            // Investigators win
+            Bukkit.broadcast(Component.text(sep));
+            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD));
+            Bukkit.broadcast(Component.text("Objektif berhasil diselesaikan!").color(NamedTextColor.GRAY));
+            Bukkit.broadcast(Component.text(sep));
+            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+            endGame();
+            return;
+        }
+
+        // Check if all impostors are eliminated
+        boolean impostorsAlive = false;
+        for (PlayerData pd : playerDataMap.values()) {
+            if (pd.isActive() && pd.isImpostor()) {
+                impostorsAlive = true;
+                break;
+            }
+        }
+
+        if (!impostorsAlive) {
+            Bukkit.broadcast(Component.text(sep));
+            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD));
+            Bukkit.broadcast(Component.text("Semua impostor telah tereliminasi!").color(NamedTextColor.GRAY));
+            Bukkit.broadcast(Component.text(sep));
+            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+            endGame();
+        }
     }
 
-    /**
-     * Eliminate a player (after voting).
-     */
+
+
     public void eliminatePlayer(UUID playerId) {
         PlayerData pd = getPlayerData(playerId);
         if (pd != null) {
             pd.setEliminated(true);
+            if (objectiveManager != null) {
+                objectiveManager.handlePlayerElimination(playerId);
+            }
         }
     }
 
@@ -440,6 +544,14 @@ public class GameManager {
         // Save current game state (full state including inventory, health, etc.)
         savedGameState = turnManager.saveCurrentState();
 
+        // Clear potion effects for meeting world
+        for (PlayerData pd : getActivePlayers()) {
+            Player p = Bukkit.getPlayer(pd.getPlayerId());
+            if (p != null) {
+                p.getActivePotionEffects().forEach(effect -> p.removePotionEffect(effect.getType()));
+            }
+        }
+
         // Stop turn timer
         turnManager.stopTurn();
 
@@ -456,7 +568,10 @@ public class GameManager {
 
     // ===== Return from Meeting =====
     public void returnFromMeeting(String resultMessage, UUID eliminatedPlayerId) {
+        String separator = "§8========================================";
+        Bukkit.broadcast(Component.text(separator));
         Bukkit.broadcast(Component.text(resultMessage).color(NamedTextColor.YELLOW).decorate(TextDecoration.BOLD));
+        Bukkit.broadcast(Component.text(separator));
 
         // Clear votes
         for (PlayerData pd : getActivePlayers()) {
@@ -464,118 +579,36 @@ public class GameManager {
         }
         voteManager.cleanup();
 
-        // Check win condition
-        WinCheckResult winResult = checkWinCondition();
-        if (winResult.type != WinType.NO_WIN) {
-            handleGameEnd(winResult);
-            return;
-        }
+        // Set state back to PLAYING before win check so the teleport etc. can work
+        gameState = GameState.PLAYING;
 
-        // If there was an eliminated player, keep them in meeting world as FREE spectator
-        // (they can move around freely, NOT locked to a specific entity)
+        // Check win condition AFTER setting state
+        checkWinConditions();
+        // If game ended due to win, stop here
+        if (!isPlaying()) return;
+
+        // If there was an eliminated player, keep them in meeting world as spectator
         if (eliminatedPlayerId != null) {
             Player eliminated = Bukkit.getPlayer(eliminatedPlayerId);
             if (eliminated != null) {
-                // Teleport to meeting world spawn as free spectator
                 org.bukkit.World mw = worldManager.getMeetingWorld();
                 if (mw != null) {
                     eliminated.teleport(worldManager.getRandomizedMeetingSpawn());
                 }
                 eliminated.setGameMode(org.bukkit.GameMode.SPECTATOR);
-                eliminated.setSpectatorTarget(null); // Free spectator, not locked
+                eliminated.setSpectatorTarget(null);
                 eliminated.sendMessage(Component.text("Kamu sudah tereliminasi. Tonton permainan!").color(NamedTextColor.RED));
             }
         }
 
-        // Resume game
-        gameState = GameState.PLAYING;
-        lastMeetingEndTime = System.currentTimeMillis();
+        // We only set meetingCooldownActive here. The actual lastMeetingEndTime 
+        // will be recorded when the active player makes their first move.
         meetingCooldownActive = true;
 
         // Restore state and teleport back (only active players)
         turnManager.restoreStateAndResume(savedGameState, eliminatedPlayerId);
 
         scoreboardManager.startUpdates();
-    }
-
-    // ===== Handle Game End =====
-    public void handleGameEnd(WinCheckResult winResult) {
-        turnManager.stopTurn();
-        scoreboardManager.stopUpdates();
-        voteManager.cleanup();
-
-        gameState = GameState.FINISHED;
-
-        // Broadcast win message
-        Bukkit.broadcast(Component.text("══════════════════════════════").color(NamedTextColor.GOLD));
-        Bukkit.broadcast(Component.text(winResult.message).color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD));
-        Bukkit.broadcast(Component.text("══════════════════════════════").color(NamedTextColor.GOLD));
-
-        // Find impostor names
-        java.util.List<String> impostorNames = new java.util.ArrayList<>();
-        for (PlayerData pd : playerDataMap.values()) {
-            if (pd.isImpostor()) {
-                impostorNames.add(pd.getPlayerName());
-            }
-        }
-        String impostorNameStr = "Unknown";
-        if (impostorNames.size() == 1) {
-            impostorNameStr = impostorNames.get(0);
-        } else if (impostorNames.size() == 2) {
-            impostorNameStr = impostorNames.get(0) + " dan " + impostorNames.get(1);
-        } else if (impostorNames.size() > 2) {
-            impostorNameStr = String.join(", ", impostorNames.subList(0, impostorNames.size() - 1)) + " dan " + impostorNames.get(impostorNames.size() - 1);
-        }
-
-        // Show title and play sound, then reset roles
-        for (PlayerData pd : playerDataMap.values()) {
-            Player player = Bukkit.getPlayer(pd.getPlayerId());
-            if (player != null) {
-                if (winResult.type == WinType.INVESTIGATORS_WIN) {
-                    net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
-                        Component.text("Investigator Menang").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
-                        Component.text(impostorNameStr + " adalah Impostor").color(NamedTextColor.RED),
-                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(500), java.time.Duration.ofSeconds(4), java.time.Duration.ofSeconds(1))
-                    );
-                    player.showTitle(title);
-                    player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
-                } else if (winResult.type == WinType.IMPOSTOR_WIN) {
-                    net.kyori.adventure.title.Title title = net.kyori.adventure.title.Title.title(
-                        Component.text("Impostor Menang").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
-                        Component.text(impostorNameStr + " adalah Impostor").color(NamedTextColor.RED),
-                        net.kyori.adventure.title.Title.Times.times(java.time.Duration.ofMillis(500), java.time.Duration.ofSeconds(4), java.time.Duration.ofSeconds(1))
-                    );
-                    player.showTitle(title);
-                    player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_WITHER_DEATH, 1.0f, 1.0f);
-                }
-            }
-        }
-
-        // Immediately teleport to meeting world and clear data
-        for (PlayerData pd : playerDataMap.values()) {
-            pd.setRole(null);
-            pd.setEliminated(false);
-            pd.clearVote();
-        }
-        worldManager.teleportAllToMeetingWorld(playerDataMap.values());
-        scoreboardManager.removeScoreboards();
-        gameState = GameState.LOBBY;
-    }
-
-    // ===== Win Type =====
-    public enum WinType {
-        INVESTIGATORS_WIN,
-        IMPOSTOR_WIN,
-        NO_WIN
-    }
-
-    public static class WinCheckResult {
-        public final WinType type;
-        public final String message;
-        public WinCheckResult(WinType type, String message) {
-            this.type = type;
-            this.message = message;
-        }
     }
 
     // ===== Saved Game State =====
@@ -596,15 +629,20 @@ public class GameManager {
         public final double health;
         public final int foodLevel;
         public final float saturation;
+        public final float exhaustion;
         public final Location position;
         public final java.util.Collection<org.bukkit.potion.PotionEffect> potionEffects;
+        public final int fireTicks;
+        public final int freezeTicks;
+        public final org.bukkit.util.Vector velocity;
 
         public SavedGameState(UUID activePlayerId, int turnTimeLeft, int turnNumber,
                               ItemStack[] inventory, ItemStack[] armorContents,
                               ItemStack[] extraContents, int heldItemSlot,
-                              double health, int foodLevel, float saturation,
+                              double health, int foodLevel, float saturation, float exhaustion,
                               Location position,
-                              java.util.Collection<org.bukkit.potion.PotionEffect> potionEffects) {
+                              java.util.Collection<org.bukkit.potion.PotionEffect> potionEffects,
+                              int fireTicks, int freezeTicks, org.bukkit.util.Vector velocity) {
             this.activePlayerId = activePlayerId;
             this.turnTimeLeft = turnTimeLeft;
             this.turnNumber = turnNumber;
@@ -615,8 +653,12 @@ public class GameManager {
             this.health = health;
             this.foodLevel = foodLevel;
             this.saturation = saturation;
+            this.exhaustion = exhaustion;
             this.position = position;
             this.potionEffects = potionEffects;
+            this.fireTicks = fireTicks;
+            this.freezeTicks = freezeTicks;
+            this.velocity = velocity;
         }
     }
 }

@@ -77,9 +77,6 @@ public class ScoreboardManager {
         }
     }
 
-    /**
-     * Create or update a player's scoreboard.
-     */
     private void updatePlayerScoreboard(Player player, PlayerData pd) {
         org.bukkit.scoreboard.ScoreboardManager bukkitManager = Bukkit.getScoreboardManager();
         if (bukkitManager == null) return;
@@ -90,10 +87,8 @@ public class ScoreboardManager {
             playerScoreboards.put(pd.getPlayerId(), board);
         }
 
-        // Get or create the objective
         org.bukkit.scoreboard.Objective sidebarObjective = board.getObjective("sci_sidebar");
         if (sidebarObjective != null) {
-            // Unregister to clear entries cleanly and prevent "objective already exists" issues
             sidebarObjective.unregister();
         }
 
@@ -103,15 +98,11 @@ public class ScoreboardManager {
         
         try {
             sidebarObjective.numberFormat(io.papermc.paper.scoreboard.numbers.NumberFormat.blank());
-        } catch (Throwable t) {
-            // Ignore if method not available on this server version
-        }
+        } catch (Throwable t) {}
 
-        // Baris 1: Judul (sudah di set di atas)
-        // Baris 2: Pembatas atas
-        sidebarObjective.getScore("§7--------------------").setScore(9);
+        int score = 15;
+        sidebarObjective.getScore("§7--------------------").setScore(score--);
 
-        // Baris 3: Role
         String roleText;
         NamedTextColor roleColor;
         if (pd == null || pd.getRole() == null) {
@@ -121,64 +112,77 @@ public class ScoreboardManager {
             roleText = "IMPOSTOR";
             roleColor = NamedTextColor.RED;
         } else {
-            roleText = "INVESIGATOR";
+            roleText = "INVESTIGATOR";
             roleColor = NamedTextColor.GREEN;
         }
-        sidebarObjective.getScore("§fRole: §" + (roleColor == NamedTextColor.RED ? "c" : "a") + roleText).setScore(8);
+        sidebarObjective.getScore("§fRole: §" + (roleColor == NamedTextColor.RED ? "c" : "a") + roleText).setScore(score--);
+        sidebarObjective.getScore(" ").setScore(score--); // spacing
 
-        // Baris 4: Kosong
-        sidebarObjective.getScore(" ").setScore(7);
-
-        // Baris 5: Objektif/Clue
-        Objective gameObjective = gameManager.getCurrentObjective();
-        String objectiveText;
-        if (gameObjective == null) {
-            objectiveText = "§fObjektif: §eNone";
-        } else if (pd != null && pd.isImpostor()) {
-            objectiveText = "§fClue: §e" + gameObjective.getClue();
-        } else {
-            objectiveText = "§fObjektif: §e" + gameObjective.getProgressDisplay();
+        // Objectives
+        ObjectiveManager objManager = gameManager.getObjectiveManager();
+        if (pd != null && pd.getRole() != null) {
+            if (!pd.isImpostor()) {
+                sidebarObjective.getScore("§fObjektif:").setScore(score--);
+                if (objManager != null) {
+                    java.util.List<Objective> objs = objManager.getPlayerObjectives(player.getUniqueId());
+                    for (Objective obj : objs) {
+                        String text = "§e" + obj.getProgressDisplay();
+                        if (text.length() > 40) text = text.substring(0, 37) + "...";
+                        sidebarObjective.getScore(text).setScore(score--);
+                    }
+                }
+            } else {
+                // Impostors can see the shared/inherited objectives
+                if (objManager != null) {
+                    java.util.List<Objective> shared = objManager.getSharedObjectives();
+                    if (shared != null && !shared.isEmpty()) {
+                        sidebarObjective.getScore("§fObjektif:").setScore(score--);
+                        for (Objective obj : shared) {
+                            String text = "§e" + obj.getProgressDisplay();
+                            if (text.length() > 40) text = text.substring(0, 37) + "...";
+                            sidebarObjective.getScore(text).setScore(score--);
+                        }
+                    }
+                }
+            }
         }
         
-        // Truncate if too long (max 40 chars for legacy scoreboard)
-        if (objectiveText.length() > 40) {
-            objectiveText = objectiveText.substring(0, 37) + "...";
-        }
-        sidebarObjective.getScore(objectiveText).setScore(6);
+        sidebarObjective.getScore("  ").setScore(score--); // spacing
 
-        // Baris 6: Kosong
-        sidebarObjective.getScore("  ").setScore(5);
-
-        // Baris 7: Giliran
+        // Turn Info
         Player activePlayer = gameManager.getCurrentActivePlayer();
         String turnText = activePlayer != null ? activePlayer.getName() : "None";
         if (pd != null && pd.isEliminated()) {
-            sidebarObjective.getScore("§fStatus: §cEliminated").setScore(4);
+            sidebarObjective.getScore("§fStatus: §cEliminated").setScore(score--);
+            sidebarObjective.getScore("§fGiliran: §b" + turnText).setScore(score--);
         } else {
-            sidebarObjective.getScore("§fGiliran: §b" + turnText).setScore(4);
+            sidebarObjective.getScore("§fGiliran: §b" + turnText).setScore(score--);
         }
 
-        // Baris 8: Timer
+        // Timer
         int timeLeft = gameManager.getCurrentTurnTimeLeft();
         String timerChar = timeLeft <= 3 ? "c" : "e";
-        sidebarObjective.getScore("§fTimer: §" + timerChar + timeLeft + "s").setScore(3);
+        sidebarObjective.getScore("§fTimer: §" + timerChar + timeLeft + "s").setScore(score--);
 
-        // Baris 9: Meeting
+        // Meeting
         if (gameManager.isMeeting()) {
-            sidebarObjective.getScore("§fMeeting: §eSedang berlangsung").setScore(2);
+            sidebarObjective.getScore("§fMeeting: §eSedang berlangsung").setScore(score--);
         } else if (gameManager.isPlaying()) {
-            int cooldown = gameManager.getMeetingCooldownRemaining();
-            if (cooldown > 0) {
-                sidebarObjective.getScore("§fMeeting: §7" + cooldown + "s").setScore(2);
+            if (gameManager.isWaitingForFirstMove()) {
+                sidebarObjective.getScore("§fMeeting: §7" + gameManager.getMeetingCooldownSeconds() + "s").setScore(score--);
             } else {
-                sidebarObjective.getScore("§fMeeting: §aReady!").setScore(2);
+                int cooldown = gameManager.getMeetingCooldownRemaining();
+                if (cooldown > 0) {
+                    sidebarObjective.getScore("§fMeeting: §7" + cooldown + "s").setScore(score--);
+                } else {
+                    sidebarObjective.getScore("§fMeeting: §aReady!").setScore(score--);
+                }
             }
         } else {
-            sidebarObjective.getScore("§fMeeting: §7-").setScore(2);
+            sidebarObjective.getScore("§fMeeting: §7-").setScore(score--);
         }
 
-        // Baris 10: Pembatas bawah
-        sidebarObjective.getScore("§7-------------------- ").setScore(1);
+        sidebarObjective.getScore("§7-------------------- ").setScore(score--);
 
         // Set the scoreboard for the player
         

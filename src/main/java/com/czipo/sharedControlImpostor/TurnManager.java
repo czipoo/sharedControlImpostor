@@ -81,29 +81,43 @@ public class TurnManager {
         gameManager.setTurnNumber(gameManager.getTurnNumber() + 1);
         gameManager.setCurrentTurnTimeLeft(gameManager.getTurnTimeSeconds());
 
-        // Sync all players' state to the active player before starting
-        syncAllPlayersToActive();
+        // Set game modes: active = SURVIVAL, others = SPECTATOR
+        setGameModes(null);
+
+        Player activePlayer = Bukkit.getPlayer(selected.getPlayerId());
+
+        // Teleport active player to survival world if it's the very first turn!
+        if (gameManager.getTurnNumber() == 1 && gameManager.isWaitingForFirstMove()) {
+            if (activePlayer != null) {
+                org.bukkit.Location survivalSpawn = gameManager.getWorldManager().getSurvivalSpawn();
+                if (survivalSpawn != null) {
+                    activePlayer.teleport(survivalSpawn);
+                }
+            }
+        }
 
         // Broadcast who is playing
-        Player activePlayer = Bukkit.getPlayer(selected.getPlayerId());
         if (activePlayer != null) {
             Bukkit.broadcast(Component.text(selected.getPlayerName() + " sedang bermain!")
                     .color(NamedTextColor.YELLOW).decorate(TextDecoration.BOLD));
         }
 
-        // Set game modes: active = SURVIVAL, others = SPECTATOR with setSpectatorTarget
-        setGameModes(null);
-
-        // Start the turn timer countdown
+        // Start the turn timer countdown OR wait for first move
         if (!gameManager.isWaitingForFirstMove()) {
+            // Sync all spectators to active player state after a short delay
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                if (gameManager.isPlaying()) {
+                    syncAllPlayersToActive();
+                }
+            }, 5L);
+
             startTurnTimer();
+            startPeriodicSync();
         } else {
             // Player 1 waiting for first move: show action bar immediately and keep showing it
             startWaitingActionBar();
         }
         
-        // Start sync task for spectators
-        startPeriodicSync();
         running = true;
     }
 
@@ -151,12 +165,14 @@ public class TurnManager {
             Player activePlayer = gameManager.getCurrentActivePlayer();
             if (activePlayer == null) return;
 
-            for (PlayerData pd : gameManager.getActivePlayers()) {
+            for (PlayerData pd : gameManager.getRegisteredPlayers()) {
                 Player player = Bukkit.getPlayer(pd.getPlayerId());
                 if (player == null || player.getUniqueId().equals(activePlayer.getUniqueId())) continue;
 
                 // Sync position and rotation
                 player.teleport(activePlayer.getLocation());
+                
+                if (pd.isEliminated()) continue;
 
                 // Sync inventory contents
                 player.getInventory().setContents(activePlayer.getInventory().getContents());
@@ -197,6 +213,15 @@ public class TurnManager {
                 } else {
                     player.setBedSpawnLocation(null, true);
                 }
+
+                // Sync freeze ticks
+                player.setFreezeTicks(activePlayer.getFreezeTicks());
+
+                // Sync exhaustion
+                player.setExhaustion(activePlayer.getExhaustion());
+
+                // Sync velocity (transfer momentum)
+                player.setVelocity(activePlayer.getVelocity().clone());
             }
             
             // Update mob targets
@@ -238,18 +263,21 @@ public class TurnManager {
                 // Remove vote item if present (from previous meeting)
                 removeVoteItem(player);
             } else {
-                // Spectator - can only watch
-                player.setGameMode(GameMode.SPECTATOR);
-                player.setCollidable(false);
-                player.setInvisible(false);
-                // Force spectator to spectate the active player (delay by 1 tick to ensure teleport finishes)
-                if (activePlayer != null) {
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                        if (player.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
-                            player.teleport(activePlayer.getLocation());
-                            player.setSpectatorTarget(activePlayer);
-                        }
-                    }, 10L);
+                // Spectator
+                removeVoteItem(player);
+                if (!gameManager.isWaitingForFirstMove()) {
+                    player.setGameMode(GameMode.SPECTATOR);
+                    player.setCollidable(false);
+                    player.setInvisible(false);
+                    // Force spectator to spectate the active player (delay by 1 tick to ensure teleport finishes)
+                    if (activePlayer != null) {
+                        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                            if (player.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
+                                player.teleport(activePlayer.getLocation());
+                                player.setSpectatorTarget(activePlayer);
+                            }
+                        }, 10L);
+                    }
                 }
             }
         }
@@ -261,7 +289,7 @@ public class TurnManager {
     private void removeVoteItem(Player player) {
         for (int i = 0; i < player.getInventory().getSize(); i++) {
             ItemStack item = player.getInventory().getItem(i);
-            if (item != null && item.getType() == Material.PLAYER_HEAD) {
+            if (item != null && item.getType() == Material.KNOWLEDGE_BOOK) {
                 if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
                     String name = PlainTextComponentSerializer.plainText().serialize(item.getItemMeta().displayName());
                     if (name.contains("Vote")) {
@@ -285,6 +313,10 @@ public class TurnManager {
         if (activePlayer != null) {
             activePlayer.sendActionBar(Component.text("Giliranmu untuk bermain").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD));
             activePlayer.playSound(activePlayer.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1.0f, 1.0f);
+        }
+
+        if (syncTask == null || syncTask.isCancelled()) {
+            startPeriodicSync();
         }
 
         turnTimerTask = new BukkitRunnable() {
@@ -347,7 +379,7 @@ public class TurnManager {
 
                 UUID activeId = gameManager.getCurrentActivePlayerId();
 
-                for (PlayerData pd : gameManager.getActivePlayers()) {
+                for (PlayerData pd : gameManager.getRegisteredPlayers()) {
                     Player player = Bukkit.getPlayer(pd.getPlayerId());
                     if (player == null || player.getUniqueId().equals(activeId)) continue;
 
@@ -382,6 +414,8 @@ public class TurnManager {
                             }
                         }, 5L); 
                     }
+                    
+                    if (pd.isEliminated()) continue; // Do not sync inventory/health for eliminated players
 
                     // --- SINKRONISASI STATUS ---
                     player.getInventory().setContents(activePlayer.getInventory().getContents());
@@ -462,6 +496,10 @@ public class TurnManager {
         float saturation = 5.0f;
         Location position = null;
         java.util.Collection<org.bukkit.potion.PotionEffect> potionEffects = null;
+        int fireTicks = 0;
+        int freezeTicks = 0;
+        org.bukkit.util.Vector velocity = new org.bukkit.util.Vector(0, 0, 0);
+        float exhaustion = 0.0f;
 
         if (activePlayer != null) {
             // Clone inventory arrays to prevent modification
@@ -474,6 +512,10 @@ public class TurnManager {
             saturation = activePlayer.getSaturation();
             position = activePlayer.getLocation().clone();
             potionEffects = new java.util.ArrayList<>(activePlayer.getActivePotionEffects());
+            fireTicks = activePlayer.getFireTicks();
+            freezeTicks = activePlayer.getFreezeTicks();
+            velocity = activePlayer.getVelocity().clone();
+            exhaustion = activePlayer.getExhaustion();
         }
 
         return new GameManager.SavedGameState(
@@ -487,8 +529,12 @@ public class TurnManager {
                 health,
                 foodLevel,
                 saturation,
+                exhaustion,
                 position,
-                potionEffects
+                potionEffects,
+                fireTicks,
+                freezeTicks,
+                velocity
         );
     }
 
@@ -510,81 +556,141 @@ public class TurnManager {
      * @param eliminatedPlayerId If not null, this player stays in meeting world
      */
     public void restoreStateAndResume(GameManager.SavedGameState savedState, UUID eliminatedPlayerId) {
-        gameManager.setCurrentActivePlayer(savedState.activePlayerId);
-        gameManager.setTurnNumber(savedState.turnNumber);
+        // Check if the previously active player has been eliminated
+        boolean activeWasEliminated = eliminatedPlayerId != null
+                && eliminatedPlayerId.equals(savedState.activePlayerId);
 
-        // Teleport all active players back to survival world (excluding eliminated)
         List<PlayerData> activePlayers = gameManager.getActivePlayers();
+        org.bukkit.World survivalWorld = gameManager.getWorldManager().getSurvivalWorld();
 
-        // If we have a saved position, teleport to that; otherwise use survival spawn
-        Location restoreLocation = savedState.position != null
-                ? savedState.position
-                : gameManager.getWorldManager().getSurvivalSpawn();
-
-        for (PlayerData pd : activePlayers) {
-            // Teleport ALL players back to survival world, including eliminated
-            Player player = Bukkit.getPlayer(pd.getPlayerId());
-            if (player != null && restoreLocation != null) {
-                player.teleport(restoreLocation);
-                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
-            }
+        // Determine restore location — must be in survival world
+        Location restoreLocation;
+        if (savedState.position != null && survivalWorld != null
+                && savedState.position.getWorld() != null
+                && savedState.position.getWorld().equals(survivalWorld)) {
+            restoreLocation = savedState.position;
+        } else if (survivalWorld != null) {
+            restoreLocation = gameManager.getWorldManager().getSurvivalSpawn();
+        } else {
+            restoreLocation = null;
         }
 
-        // Small delay to ensure teleportation completes, then restore state
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            // Restore full state to all active players (excluding eliminated)
-            for (PlayerData pd : gameManager.getActivePlayers()) {
-                // Skip eliminated player
-                if (eliminatedPlayerId != null && pd.getPlayerId().equals(eliminatedPlayerId)) {
-                    continue;
+        // Step 1: If active player was eliminated, do a fresh turn
+        if (activeWasEliminated) {
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                // Setup turn state - waitingForFirstMove so timer starts when player moves
+                gameManager.setWaitingForFirstMove(true);
+                gameManager.setCurrentTurnTimeLeft(gameManager.getTurnTimeSeconds()); // Timer swap dari awal
+                startNextTurn(); // Gacha giliran (memilih pemain aktif baru)
+
+                Player newActive = gameManager.getCurrentActivePlayer();
+                if (newActive != null) {
+                    if (restoreLocation != null) {
+                        newActive.teleport(restoreLocation);
+                        newActive.playSound(restoreLocation, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+                    }
+                    
+                    // Mewariskan state tubuh sebelumnya ke pemain baru
+                    if (savedState.inventory != null) newActive.getInventory().setContents(savedState.inventory);
+                    if (savedState.armorContents != null) newActive.getInventory().setArmorContents(savedState.armorContents);
+                    if (savedState.extraContents != null) newActive.getInventory().setExtraContents(savedState.extraContents);
+                    newActive.getInventory().setHeldItemSlot(savedState.heldItemSlot);
+                    newActive.setHealth(savedState.health);
+                    newActive.setFoodLevel(savedState.foodLevel);
+                    newActive.setSaturation(savedState.saturation);
+                    newActive.setExhaustion(savedState.exhaustion);
+                    newActive.getActivePotionEffects().forEach(e -> newActive.removePotionEffect(e.getType()));
+                    if (savedState.potionEffects != null) savedState.potionEffects.forEach(newActive::addPotionEffect);
+                    newActive.setFireTicks(savedState.fireTicks);
+                    newActive.setFreezeTicks(savedState.freezeTicks);
+                    removeVoteItem(newActive);
                 }
 
+                // Spectators stay in meeting world and DO NOT switch to spectator mode yet
+                for (PlayerData pd : gameManager.getActivePlayers()) {
+                    if (newActive != null && pd.getPlayerId().equals(newActive.getUniqueId())) continue;
+                    Player player = Bukkit.getPlayer(pd.getPlayerId());
+                    if (player != null) {
+                        removeVoteItem(player);
+                    }
+                }
+
+                // Do NOT start periodic sync yet, it will start when the player moves
+                running = true;
+                scoreboardUpdate();
+            }, 20L);
+            return;
+        }
+
+        // Step 2: Active player was NOT eliminated - resume from saved state
+        UUID activeId = savedState.activePlayerId;
+        Player activePlayer = Bukkit.getPlayer(activeId);
+
+        // Teleport active player first
+        if (activePlayer != null && restoreLocation != null) {
+            activePlayer.teleport(restoreLocation);
+            activePlayer.playSound(restoreLocation, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+        }
+
+        // After 1 tick, restore state to active player, and set spectators to spectator mode (without teleporting)
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            // Restore full saved state to the active player
+            if (activePlayer != null) {
+                if (savedState.inventory != null) activePlayer.getInventory().setContents(savedState.inventory);
+                if (savedState.armorContents != null) activePlayer.getInventory().setArmorContents(savedState.armorContents);
+                if (savedState.extraContents != null) activePlayer.getInventory().setExtraContents(savedState.extraContents);
+                activePlayer.getInventory().setHeldItemSlot(savedState.heldItemSlot);
+                activePlayer.setHealth(savedState.health);
+                activePlayer.setFoodLevel(savedState.foodLevel);
+                activePlayer.setSaturation(savedState.saturation);
+                activePlayer.setExhaustion(savedState.exhaustion);
+                activePlayer.getActivePotionEffects().forEach(e -> activePlayer.removePotionEffect(e.getType()));
+                if (savedState.potionEffects != null) savedState.potionEffects.forEach(activePlayer::addPotionEffect);
+                activePlayer.setFireTicks(savedState.fireTicks);
+                activePlayer.setFreezeTicks(savedState.freezeTicks);
+                removeVoteItem(activePlayer);
+                
+                activePlayer.setGameMode(GameMode.SURVIVAL);
+                activePlayer.setAllowFlight(false);
+                activePlayer.setFlying(false);
+                activePlayer.setInvisible(false);
+                activePlayer.setCollidable(true);
+            }
+
+            // Spectators stay in meeting world and DO NOT switch to spectator mode yet
+            for (PlayerData pd : gameManager.getActivePlayers()) {
+                if (pd.getPlayerId().equals(activeId)) continue;
                 Player player = Bukkit.getPlayer(pd.getPlayerId());
                 if (player == null) continue;
-
-                // Restore inventory
-                if (savedState.inventory != null) {
-                    player.getInventory().setContents(savedState.inventory);
-                }
-                if (savedState.armorContents != null) {
-                    player.getInventory().setArmorContents(savedState.armorContents);
-                }
-                if (savedState.extraContents != null) {
-                    player.getInventory().setExtraContents(savedState.extraContents);
-                }
-                player.getInventory().setHeldItemSlot(savedState.heldItemSlot);
-
-                // Restore health, hunger, saturation
-                player.setHealth(savedState.health);
-                player.setFoodLevel(savedState.foodLevel);
-                player.setSaturation(savedState.saturation);
-
-                // Restore potion effects
-                player.getActivePotionEffects().forEach(e -> player.removePotionEffect(e.getType()));
-                if (savedState.potionEffects != null) {
-                    savedState.potionEffects.forEach(e -> player.addPotionEffect(e));
-                }
-
-                // Remove any leftover vote items
+                
                 removeVoteItem(player);
             }
 
-            // Set game modes for everyone (including eliminated, so they spectate)
-            setGameModes(null);
+            // Set up turn state - waitingForFirstMove so timer starts when player moves
+            gameManager.setCurrentActivePlayer(activeId);
+            gameManager.setTurnNumber(savedState.turnNumber);
+            gameManager.setCurrentTurnTimeLeft(savedState.turnTimeLeft); // Resume from saved time
+            gameManager.setWaitingForFirstMove(true); // Timer starts when player moves
 
-            // Resume the turn timer from saved time
-            gameManager.setCurrentTurnTimeLeft(savedState.turnTimeLeft);
-            startTurnTimer();
-            startPeriodicSync();
+            // Start waiting action bar
+            startWaitingActionBar();
+            
+            // DO NOT start periodic sync yet, it will start when the player moves
             running = true;
+            scoreboardUpdate();
 
-            // Broadcast who's playing again
-            Player activePlayer = gameManager.getCurrentActivePlayer();
+            // Broadcast who's playing
             if (activePlayer != null) {
                 Bukkit.broadcast(Component.text(activePlayer.getName() + " sedang bermain! (resumed)")
                         .color(NamedTextColor.YELLOW).decorate(TextDecoration.BOLD));
             }
-        }, 20L); // 1 second delay
+        }, 20L); // 1 second after active player teleports
+    }
+
+    private void scoreboardUpdate() {
+        if (gameManager.getScoreboardManager() != null) {
+            gameManager.getScoreboardManager().startUpdates();
+        }
     }
 
     /**

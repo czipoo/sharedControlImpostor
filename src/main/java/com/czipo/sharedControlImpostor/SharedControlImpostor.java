@@ -15,6 +15,8 @@ public final class SharedControlImpostor extends JavaPlugin {
     private VoteManager voteManager;
     private ScoreboardManager scoreboardManager;
     private WorldManager worldManager;
+    private SettingsManager settingsManager;
+    private ObjectiveManager objectiveManager;
     private CommandHandler commandHandler;
 
     @Override
@@ -37,7 +39,14 @@ public final class SharedControlImpostor extends JavaPlugin {
         gameManager.setWorldManager(worldManager);
 
         // Register event listeners
+        this.settingsManager = new SettingsManager(this, gameManager);
+        this.objectiveManager = new ObjectiveManager(gameManager);
+        gameManager.setSettingsManager(settingsManager);
+        gameManager.setObjectiveManager(objectiveManager);
+
         getServer().getPluginManager().registerEvents(new GameListener(this, gameManager), this);
+        getServer().getPluginManager().registerEvents(new ObjectiveListener(this, gameManager), this);
+        getServer().getPluginManager().registerEvents(settingsManager, this);
         getServer().getPluginManager().registerEvents(new VoteListener(this, gameManager), this);
 
         // Register commands
@@ -46,8 +55,6 @@ public final class SharedControlImpostor extends JavaPlugin {
         registerCommand("unregis", commandHandler);
         registerCommand("start", commandHandler);
         registerCommand("meeting", commandHandler);
-        registerCommand("settimer", commandHandler);
-        registerCommand("setimpostor", commandHandler);
         registerCommand("endgame", commandHandler);
         registerCommand("listplayer", commandHandler);
         registerCommand("commandinfo", commandHandler);
@@ -114,13 +121,4 @@ public final class SharedControlImpostor extends JavaPlugin {
     public ScoreboardManager getScoreboardManager() { return scoreboardManager; }
     public WorldManager getWorldManager() { return worldManager; }
 
-    /**
-     * Handle game end from an external source (e.g., objective completion).
-     */
-    public void handleGameEnd(GameManager.WinCheckResult result) {
-        // Delegate directly to GameManager to avoid duplicated logic
-        if (gameManager != null) {
-            gameManager.handleGameEnd(result);
-        }
-    }
 }

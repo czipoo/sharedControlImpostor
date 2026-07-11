@@ -44,11 +44,12 @@ public class VoteManager {
     // Vote timer
     private BukkitRunnable voteTimerTask;
     private int voteTimeLeft;
-    private static final int VOTE_TIME_SECONDS = 60;
     private boolean votingActive = false;
     private boolean timerStarted = false;
     private BukkitRunnable preVoteTask;
 
+    // Time settings
+    private int VOTE_TIME_SECONDS = 60;
     // Open voting panels tracking
     private final Set<UUID> playersWithOpenPanel = new HashSet<>();
 
@@ -59,6 +60,14 @@ public class VoteManager {
 
     public boolean isTimerStarted() {
         return timerStarted;
+    }
+
+    public void setVoteTime(int seconds) {
+        this.VOTE_TIME_SECONDS = seconds;
+    }
+
+    public int getVoteTimeSeconds() {
+        return VOTE_TIME_SECONDS;
     }
 
     /**
@@ -115,13 +124,9 @@ public class VoteManager {
      * Give the vote item (player head) to a player at slot 5 (hotbar index 4).
      */
     private void giveVoteItem(Player player) {
-        ItemStack voteItem = new ItemStack(Material.PLAYER_HEAD, 1);
-
-        SkullMeta meta = (SkullMeta) voteItem.getItemMeta();
+        ItemStack voteItem = new ItemStack(Material.KNOWLEDGE_BOOK, 1);
+        ItemMeta meta = voteItem.getItemMeta();
         if (meta != null) {
-            // Set the head to a specific skin (Czipo0 as specified)
-            org.bukkit.profile.PlayerProfile profile = Bukkit.createPlayerProfile("Czipo0");
-            meta.setOwnerProfile(profile);
             meta.displayName(Component.text("Vote").color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD));
             voteItem.setItemMeta(meta);
         }
@@ -646,7 +651,7 @@ public class VoteManager {
     private void removeVoteItem(Player player) {
         for (int i = 0; i < 9; i++) {
             ItemStack item = player.getInventory().getItem(i);
-            if (item != null && item.getType() == Material.PLAYER_HEAD) {
+            if (item != null && item.getType() == Material.KNOWLEDGE_BOOK) {
                 if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
                     String name = PlainTextComponentSerializer.plainText().serialize(item.getItemMeta().displayName());
                     if (name.contains("Vote")) {

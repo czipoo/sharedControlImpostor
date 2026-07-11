@@ -49,7 +49,7 @@ public class GameListener implements Listener {
      * Check if an item is the Vote player head item using Component API.
      */
     private boolean isVoteItem(ItemStack item) {
-        if (item == null || item.getType() != Material.PLAYER_HEAD) return false;
+        if (item == null || item.getType() != Material.KNOWLEDGE_BOOK) return false;
         if (!item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) return false;
         String name = PlainTextComponentSerializer.plainText().serialize(item.getItemMeta().displayName());
         return name.contains("Vote");
@@ -155,8 +155,6 @@ public class GameListener implements Listener {
             return;
         }
 
-        // Track objective progress
-        trackObjectiveProgress(event);
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -168,16 +166,6 @@ public class GameListener implements Listener {
             return;
         }
 
-        // Track objective progress (place blocks)
-        if (gameManager.isPlaying() && gameManager.getCurrentObjective() != null) {
-            Objective objective = gameManager.getCurrentObjective();
-            if (objective.getType() == Objective.ObjectiveType.PLACE_BLOCKS) {
-                objective.addProgress(1);
-                if (objective.isCompleted()) {
-                    checkObjectiveCompletion(objective);
-                }
-            }
-        }
     }
 
     @EventHandler(priority = EventPriority.HIGH)
@@ -235,7 +223,9 @@ public class GameListener implements Listener {
             if (active != null && player.getUniqueId().equals(active.getUniqueId())) {
                 if (event.getFrom().getX() != event.getTo().getX() || event.getFrom().getZ() != event.getTo().getZ()) {
                     gameManager.setWaitingForFirstMove(false);
-                    gameManager.setGameStartTime(System.currentTimeMillis());
+                    long now = System.currentTimeMillis();
+                    gameManager.setGameStartTime(now);
+                    gameManager.setLastMeetingEndTime(now);
                     gameManager.getTurnManager().startTurnTimer();
                 }
             }
@@ -259,6 +249,10 @@ public class GameListener implements Listener {
                     player.teleport(spawn);
                     player.setGameMode(org.bukkit.GameMode.ADVENTURE);
                     player.getInventory().clear();
+                    
+                    if (player.isOp() && gameManager.getSettingsManager() != null) {
+                        gameManager.getSettingsManager().giveSettingsItem(player);
+                    }
                 }
             } else if (gameManager.isPlaying()) {
                 // During gameplay, teleport to survival world if registered
@@ -299,20 +293,73 @@ public class GameListener implements Listener {
         PlayerData pd = gameManager.getPlayerData(player);
         if (pd == null || !pd.isActive()) return;
         
-        // Keep the player in the survival world by setting keep inventory and not dropping exp
-        event.setKeepInventory(true);
-        event.setKeepLevel(true);
-        event.setDroppedExp(0);
-        // Clear the drops list to prevent items from dropping
-        event.getDrops().clear();
+        // Check settings for One Life and Keep Inventory
+        SettingsManager settings = gameManager.getSettingsManager();
+        if (settings != null) {
+            if (settings.isOneLifeMode()) {
+                // One Life: Impostor wins when any investigator dies
+                // Find impostor names
+                StringBuilder impostorNames = new StringBuilder();
+                for (PlayerData ipd : gameManager.getAllPlayerData()) {
+                    if (ipd.isImpostor()) {
+                        if (impostorNames.length() > 0) impostorNames.append(", ");
+                        impostorNames.append(ipd.getPlayerName());
+                    }
+                }
+                final String impostorNamesStr = impostorNames.toString();
+                final boolean isOneObj = settings.isOneObjectiveMode();
+                String chatMsg = isOneObj
+                        ? "Impostor Menang! Player mati sebelum menyelesaikan objektif!"
+                        : "Impostor Menang! Player mati sebelum menyelesaikan semua objektif!";
+                String sep = "§8========================================";
+
+                // Show title to everyone, then end game
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(net.kyori.adventure.title.Title.title(
+                            Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
+                            Component.text(impostorNamesStr + " adalah impostor").color(NamedTextColor.GRAY),
+                            net.kyori.adventure.title.Title.Times.times(
+                                    java.time.Duration.ofMillis(500), java.time.Duration.ofSeconds(4), java.time.Duration.ofSeconds(1))
+                    ));
+                    p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_DEATH, 1f, 1f);
+                }
+                Bukkit.broadcast(Component.text(sep));
+                Bukkit.broadcast(Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
+                Bukkit.broadcast(Component.text(impostorNamesStr + " adalah impostor").color(NamedTextColor.GRAY));
+                Bukkit.broadcast(Component.text(chatMsg).color(NamedTextColor.YELLOW));
+                Bukkit.broadcast(Component.text(sep));
+
+                // Delay endGame so players can see the message
+                Bukkit.getScheduler().runTaskLater(plugin, gameManager::endGame, 100L);
+                return;
+            }
+            
+            if (settings.isKeepInventory()) {
+                event.setKeepInventory(true);
+                event.setKeepLevel(true);
+                event.setDroppedExp(0);
+                event.getDrops().clear();
+            } else {
+                event.setKeepInventory(false);
+                event.setKeepLevel(false);
+            }
+        } else {
+            event.setKeepInventory(true);
+            event.setKeepLevel(true);
+            event.setDroppedExp(0);
+            event.getDrops().clear();
+        }
         
         // Respawn the player immediately in the survival world
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline()) {
-                // Get the survival world spawn
+                // Get the survival world spawn or bed spawn
                 org.bukkit.World survivalWorld = gameManager.getWorldManager().getSurvivalWorld();
                 if (survivalWorld != null) {
-                    org.bukkit.Location spawn = survivalWorld.getSpawnLocation();
+                    org.bukkit.Location spawn = player.getBedSpawnLocation();
+                    if (spawn == null || !spawn.getWorld().equals(survivalWorld)) {
+                        spawn = survivalWorld.getSpawnLocation();
+                    }
                     player.spigot().respawn();
                     player.teleport(spawn);
                     
@@ -363,10 +410,15 @@ public class GameListener implements Listener {
         PlayerData pd = gameManager.getPlayerData(player);
         if (pd == null || !pd.isActive()) return;
         
-        // Force respawn in survival world
+        // Force respawn in survival world, check bed spawn first
         org.bukkit.World survivalWorld = gameManager.getWorldManager().getSurvivalWorld();
         if (survivalWorld != null) {
-            event.setRespawnLocation(survivalWorld.getSpawnLocation());
+            org.bukkit.Location bedLoc = player.getBedSpawnLocation();
+            if (bedLoc != null && bedLoc.getWorld().equals(survivalWorld)) {
+                event.setRespawnLocation(bedLoc);
+            } else {
+                event.setRespawnLocation(survivalWorld.getSpawnLocation());
+            }
         }
     }
 
@@ -389,40 +441,26 @@ public class GameListener implements Listener {
         }
     }
 
-    // ===== Objective Tracking =====
-
-    private void trackObjectiveProgress(BlockBreakEvent event) {
+    // ===== Bed Spawn Point =====
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onBedInteract(PlayerInteractEvent event) {
         if (!gameManager.isPlaying()) return;
-        Objective objective = gameManager.getCurrentObjective();
-        if (objective == null) return;
-
-        Material broken = event.getBlock().getType();
-
-        switch (objective.getType()) {
-            case CHOP_LOGS:
-                if (broken == objective.getTargetMaterial()) {
-                    objective.addProgress(1);
-                    checkObjectiveCompletion(objective);
+        if (event.getAction() == org.bukkit.event.block.Action.RIGHT_CLICK_BLOCK && event.getClickedBlock() != null) {
+            if (event.getClickedBlock().getType().name().endsWith("_BED")) {
+                Player player = event.getPlayer();
+                // Only active player can set spawn point
+                if (!player.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) return;
+                
+                Location bedLoc = event.getClickedBlock().getLocation();
+                // Set for all active players silently
+                for (PlayerData pd : gameManager.getActivePlayers()) {
+                    Player p = Bukkit.getPlayer(pd.getPlayerId());
+                    if (p != null) {
+                        p.setBedSpawnLocation(bedLoc, true);
+                    }
                 }
-                break;
-            case MINE_ORE:
-                if (broken == objective.getTargetMaterial()) {
-                    objective.addProgress(1);
-                    checkObjectiveCompletion(objective);
-                }
-                break;
-            default:
-                break;
-        }
-    }
-
-    private void checkObjectiveCompletion(Objective objective) {
-        if (objective.isCompleted()) {
-            // Objective completed = Investigators win immediately, regardless of player counts
-            gameManager.handleGameEnd(new GameManager.WinCheckResult(
-                    GameManager.WinType.INVESTIGATORS_WIN,
-                    "Investigator Menang! Objektif berhasil dilakukan!"
-            ));
+                // No broadcast - silent spawn point set
+            }
         }
     }
 
@@ -443,9 +481,10 @@ public class GameListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerCommandPreprocess(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
+        String cmd = event.getMessage().toLowerCase();
+
 
         // Allow game commands during spectator mode
-        String cmd = event.getMessage().toLowerCase();
         if (cmd.startsWith("/meeting") || cmd.startsWith("/listplayer")) {
             return; // Allow these commands
         }
@@ -455,28 +494,6 @@ public class GameListener implements Listener {
             // Only block if they're not a mod/admin (OP)
             if (!player.isOp()) {
                 event.setCancelled(true);
-            }
-        }
-    }
-
-    // ===== Crafting Objective Tracking =====
-
-    @EventHandler
-    public void onCraftItem(org.bukkit.event.inventory.CraftItemEvent event) {
-        if (!gameManager.isPlaying()) return;
-        if (!(event.getWhoClicked() instanceof Player)) return;
-
-        Player player = (Player) event.getWhoClicked();
-        if (!player.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) return;
-
-        Objective objective = gameManager.getCurrentObjective();
-        if (objective == null) return;
-
-        if (objective.getType() == Objective.ObjectiveType.CRAFT_ITEM) {
-            ItemStack result = event.getRecipe().getResult();
-            if (result.getType() == objective.getTargetMaterial()) {
-                objective.addProgress(1);
-                checkObjectiveCompletion(objective);
             }
         }
     }

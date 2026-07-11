@@ -8,6 +8,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.Bukkit;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,16 +52,13 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 return handleStart(sender);
             case "meeting":
                 return handleMeeting(sender);
-            case "settimer":
-                return handleSetTimer(sender, args);
-            case "setimpostor":
-                return handleSetImpostor(sender, args);
             case "endgame":
                 return handleEndGame(sender);
             case "listplayer":
                 return handleListPlayer(sender);
             case "commandinfo":
                 return handleCommandInfo(sender);
+
             default:
                 sender.sendMessage(Component.text("Command tidak tersedia.").color(NamedTextColor.RED));
                 return false;
@@ -144,8 +142,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             }
             target = plugin.getServer().getPlayerExact(args[0]);
             if (target == null) {
-                // Try to find by name in registered players even if offline
-                sender.sendMessage(Component.text("Player not found online: " + args[0]).color(NamedTextColor.RED));
+                sender.sendMessage(Component.text("Player tidak ditemukan: " + args[0]).color(NamedTextColor.RED));
                 return true;
             }
         } else {
@@ -157,9 +154,21 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         }
 
         if (gameManager.unregisterPlayer(target)) {
-            sender.sendMessage(Component.text(target.getName() + " telah dihapus dari daftar.").color(NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text(target.getName() + " berhasil dihapus dari permainan!").color(NamedTextColor.GREEN));
+            if (!sender.equals(target)) {
+                target.sendMessage(Component.text("Kamu telah dihapus dari permainan!").color(NamedTextColor.YELLOW));
+            }
+            
+            // Re-check impostor limit
+            int currentPlayers = gameManager.getRegisteredPlayerCount();
+            int maxImpostors = gameManager.getMaxImpostorCount(currentPlayers > 0 ? currentPlayers : 3);
+            if (gameManager.getImpostorCount() > maxImpostors) {
+                gameManager.setImpostorCount(maxImpostors);
+                Bukkit.broadcast(Component.text("Jumlah Impostor menjadi " + maxImpostors).color(NamedTextColor.YELLOW));
+            }
+            
         } else {
-            sender.sendMessage(Component.text("Player tidak online atau tidak terdaftar.").color(NamedTextColor.RED));
+            sender.sendMessage(Component.text(target.getName() + " tidak terdaftar.").color(NamedTextColor.YELLOW));
         }
         return true;
     }
@@ -213,71 +222,6 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    // ===== /settimer =====
-    private boolean handleSetTimer(CommandSender sender, String[] args) {
-        if (!gameManager.isLobby()) {
-            sender.sendMessage(Component.text("Tidak bisa set timer saat permainan berlangsung!").color(NamedTextColor.RED));
-            return true;
-        }
-
-        if (args.length == 0) {
-            sender.sendMessage(Component.text("Penggunaan: /settimer <detik>").color(NamedTextColor.RED));
-            sender.sendMessage(Component.text("Saat ini: " + gameManager.getTurnTimeSeconds() + " detik").color(NamedTextColor.YELLOW));
-            return true;
-        }
-
-        try {
-            int seconds = Integer.parseInt(args[0]);
-            if (seconds < 5) {
-                sender.sendMessage(Component.text("Minimal timer 5 detik!").color(NamedTextColor.RED));
-                return true;
-            }
-            gameManager.setTurnTimeSeconds(seconds);
-            org.bukkit.Bukkit.broadcast(Component.text("Timer tiap giliran menjadi " + seconds + " detik!")
-                    .color(NamedTextColor.YELLOW));
-        } catch (NumberFormatException e) {
-            sender.sendMessage(Component.text("Angka tidak valid! Penggunaan: /settimer <detik>").color(NamedTextColor.RED));
-        }
-        return true;
-    }
-
-    // ===== /setimpostor =====
-    private boolean handleSetImpostor(CommandSender sender, String[] args) {
-        if (!gameManager.isLobby()) {
-            sender.sendMessage(Component.text("Tidak bisa set impostor saat permainan berlangsung!").color(NamedTextColor.RED));
-            return true;
-        }
-
-        if (args.length == 0) {
-            sender.sendMessage(Component.text("Penggunaan: /setimpostor <jumlah impostor>").color(NamedTextColor.RED));
-            sender.sendMessage(Component.text("Saat ini: " + gameManager.getImpostorCount() + " impostor").color(NamedTextColor.YELLOW));
-            sender.sendMessage(Component.text("Maksimal jumlah impostor: " +
-                    gameManager.getMaxImpostorCount(gameManager.getRegisteredPlayerCount())).color(NamedTextColor.YELLOW));
-            return true;
-        }
-
-        try {
-            int count = Integer.parseInt(args[0]);
-            int max = gameManager.getMaxImpostorCount(Math.max(gameManager.getRegisteredPlayerCount(),
-                    org.bukkit.Bukkit.getOnlinePlayers().size()));
-            if (count < 1) {
-                sender.sendMessage(Component.text("Minimal ada 1 impostor!").color(NamedTextColor.RED));
-                return true;
-            }
-            if (count > max) {
-                sender.sendMessage(Component.text("Terlalu banyak impostor! Maksima ada" + max + " impostor!")
-                        .color(NamedTextColor.RED));
-                return true;
-            }
-            gameManager.setImpostorCount(count);
-            org.bukkit.Bukkit.broadcast(Component.text("Jumlah impostor menjadi " + count + "!")
-                    .color(NamedTextColor.YELLOW));
-        } catch (NumberFormatException e) {
-            sender.sendMessage(Component.text("Angka tidak valid! Penggunaan: /setimpostor <jumlah impostor>").color(NamedTextColor.RED));
-        }
-        return true;
-    }
-
     // ===== /endgame =====
     private boolean handleEndGame(CommandSender sender) {
         if (!gameManager.isPlaying() && !gameManager.isMeeting() && gameManager.getGameState() != GameState.VOTING) {
@@ -288,6 +232,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         gameManager.endGame();
         return true;
     }
+
+
 
     // ===== /listplayer =====
     private boolean handleListPlayer(CommandSender sender) {

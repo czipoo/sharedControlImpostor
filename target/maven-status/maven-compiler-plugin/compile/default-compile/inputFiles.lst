@@ -3,9 +3,12 @@ D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlI
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\GameManager.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\GameState.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\Objective.java
+D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\ObjectiveListener.java
+D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\ObjectiveManager.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\PlayerData.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\PlayerRole.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\ScoreboardManager.java
+D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\SettingsManager.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\SharedControlImpostor.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\TurnManager.java
 D:\Minecraft Plugin\sharedControlImpostor\src\main\java\com\czipo\sharedControlImpostor\VoteListener.java

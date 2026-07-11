@@ -1,5 +1,5 @@
 name: sharedControlImpostor
-version: '1.0-SNAPSHOT'
+version: '1.0'
 main: com.czipo.sharedControlImpostor.SharedControlImpostor
 api-version: '1.21.11'
 load: POSTWORLD
@@ -25,14 +25,6 @@ commands:
     description: Call a meeting during gameplay
     usage: /meeting
     permission: sci.meeting
-  settimer:
-    description: Set turn timer in seconds (default 15)
-    usage: /settimer <seconds>
-    permission: sci.settimer
-  setimpostor:
-    description: Set the number of impostors
-    usage: /setimpostor <count>
-    permission: sci.setimpostor
   endgame:
     description: End the current game and return to lobby
     usage: /endgame
@@ -45,6 +37,7 @@ commands:
     description: Show command information and current settings
     usage: /commandinfo
     permission: sci.commandinfo
+
 permissions:
   sci.regis:
     description: Allows registering players to the game
@@ -61,12 +54,6 @@ permissions:
   sci.meeting:
     description: Allows calling meetings
     default: true
-  sci.settimer:
-    description: Allows setting turn timer
-    default: op
-  sci.setimpostor:
-    description: Allows setting impostor count
-    default: op
   sci.endgame:
     description: Allows ending the game
     default: op
@@ -75,4 +62,7 @@ permissions:
     default: true
   sci.commandinfo:
     description: Allows viewing command info
+    default: op
+  sci.settimer:
+    description: Internal timer dialog callback
     default: op
