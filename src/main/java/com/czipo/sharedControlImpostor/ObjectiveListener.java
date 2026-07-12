@@ -31,6 +31,10 @@ public class ObjectiveListener implements Listener {
     
     // For horse tracking
     private final Map<UUID, org.bukkit.Location> horseStartLocation = new HashMap<>();
+    // For MLG tracking
+    private final Map<UUID, Float> lastFallDistance = new HashMap<>();
+    // For sprint tracking
+    private final Map<UUID, Double> sprintDistance = new HashMap<>();
 
     public ObjectiveListener(SharedControlImpostor plugin, GameManager gameManager) {
         this.plugin = plugin;
@@ -182,6 +186,21 @@ public class ObjectiveListener implements Listener {
                 }
             }
         }
+        
+        // Custom Objective (Kill)
+        if (killer != null) {
+            List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(killer.getUniqueId());
+            if (objs != null) {
+                for (Objective obj : objs) {
+                    if (obj.getId().startsWith("custom_")) {
+                        CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
+                        if (data != null && data.getAction().equals("kill") && type.name().equalsIgnoreCase(data.getTarget())) {
+                            addProgress(killer, obj.getId(), 1);
+                        }
+                    }
+                }
+            }
+        }
     }
     
     @EventHandler
@@ -209,6 +228,19 @@ public class ObjectiveListener implements Listener {
                 }
             }
         }
+        
+        // Custom Objective (Pickup)
+        List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(p.getUniqueId());
+        if (objs != null) {
+            for (Objective obj : objs) {
+                if (obj.getId().startsWith("custom_")) {
+                    CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
+                    if (data != null && data.getAction().equals("pickup") && type.name().equalsIgnoreCase(data.getTarget())) {
+                        addProgress(p, obj.getId(), event.getItem().getItemStack().getAmount());
+                    }
+                }
+            }
+        }
     }
     
     @EventHandler
@@ -219,13 +251,29 @@ public class ObjectiveListener implements Listener {
         } else if (event.getBlock().getType() == Material.STONE) {
             addProgress(p, "own_mine_stone", 1);
         }
+        
+        // Custom Objective (Mining)
+        List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(p.getUniqueId());
+        if (objs != null) {
+            for (Objective obj : objs) {
+                if (obj.getId().startsWith("custom_")) {
+                    CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
+                    if (data != null && data.getAction().equals("mining") && event.getBlock().getType().name().equalsIgnoreCase(data.getTarget())) {
+                        addProgress(p, obj.getId(), 1);
+                    }
+                }
+            }
+        }
     }
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
         Player p = event.getEntity();
-        if (p.getLastDamageCause() != null && p.getLastDamageCause().getEntity() instanceof Warden) {
-            setCompleted(p, "one_warden_death");
+        if (p.getLastDamageCause() instanceof org.bukkit.event.entity.EntityDamageByEntityEvent damageEvent) {
+            if (damageEvent.getDamager() instanceof Warden || damageEvent.getDamager().getType() == EntityType.WARDEN) {
+                setCompleted(p, "one_warden_death");
+                setCompleted(p, "own_warden_death");
+            }
         }
     }
 
@@ -275,6 +323,8 @@ public class ObjectiveListener implements Listener {
         Player p = event.getPlayer();
         if (!gameManager.isPlaying()) return;
         
+        lastFallDistance.put(p.getUniqueId(), p.getFallDistance());
+        
         // Check horse riding
         if (p.isInsideVehicle() && p.getVehicle() instanceof Horse) {
             if (hasObjective(p, "own_ride_horse")) {
@@ -295,14 +345,21 @@ public class ObjectiveListener implements Listener {
         // Check sprint 500 blocks
         if (p.isSprinting()) {
             Objective obj = getObjective(p, "own_sprint_500");
-            if (obj != null && event.getFrom().distance(event.getTo()) > 0) {
-                // Just approximate: 1 tick of sprinting = ~0.28 blocks. 
-                // We'll add 1 progress for every whole block moved while sprinting.
-                int dist = (int) Math.floor(event.getFrom().distance(event.getTo()));
+            if (obj != null) {
+                double dist = Math.sqrt(Math.pow(event.getTo().getX() - event.getFrom().getX(), 2) + Math.pow(event.getTo().getZ() - event.getFrom().getZ(), 2));
                 if (dist > 0) {
-                    addProgress(p, "own_sprint_500", dist);
+                    double currentDist = sprintDistance.getOrDefault(p.getUniqueId(), 0.0) + dist;
+                    if (currentDist >= 1.0) {
+                        int blocks = (int) currentDist;
+                        addProgress(p, "own_sprint_500", blocks);
+                        sprintDistance.put(p.getUniqueId(), currentDist - blocks);
+                    } else {
+                        sprintDistance.put(p.getUniqueId(), currentDist);
+                    }
                 }
             }
+        } else {
+            sprintDistance.remove(p.getUniqueId());
         }
         
         // Check bedrock height
@@ -340,7 +397,8 @@ public class ObjectiveListener implements Listener {
         Player p = event.getPlayer();
         if (event.getBucket() == Material.WATER_BUCKET) {
             // Check MLG: fall distance > 20
-            if (p.getFallDistance() >= 20.0f) {
+            float fallDist = lastFallDistance.getOrDefault(p.getUniqueId(), p.getFallDistance());
+            if (fallDist >= 20.0f || p.getFallDistance() >= 20.0f) {
                 setCompleted(p, "own_mlg_water");
             }
         }

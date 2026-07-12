@@ -31,7 +31,10 @@ public class GameManager {
     private Objective currentObjective;
     private UUID currentActivePlayerId;
     private int currentTurnTimeLeft;
-    private int turnNumber;
+    private int turnNumber = 0;
+    
+    // Saved state for resuming the next game
+    private SavedGameState lastGameEndState;
 
     // Meeting state
     private long lastMeetingEndTime;
@@ -253,8 +256,21 @@ public class GameManager {
         // Reset meeting quotas
         playersWhoCalledMeeting.clear();
 
-        // Generate world (will freeze momentarily, but we removed the text as requested)
-        worldManager.createSurvivalWorld();
+        boolean resume = !settingsManager.isCreateNewWorld();
+        if (resume) {
+            if (worldManager.hasExistingSurvivalWorld()) {
+                worldManager.loadExistingSurvivalWorld();
+            } else {
+                Bukkit.broadcast(Component.text("World sebelumnya tidak ada. Membuat world baru.").color(NamedTextColor.YELLOW));
+                worldManager.createSurvivalWorld();
+                resume = false;
+            }
+        } else {
+            // Generate world
+            worldManager.createSurvivalWorld();
+        }
+        
+        final boolean isResume = resume;
 
         // Assign roles randomly
         List<PlayerData> shuffled = new ArrayList<>(registered);
@@ -357,14 +373,6 @@ public class GameManager {
                             }
                         }
 
-                        // Play teleport sound
-                        for (PlayerData pd : registered) {
-                            Player player = Bukkit.getPlayer(pd.getPlayerId());
-                            if (player != null) {
-                                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
-                            }
-                        }
-
                         // Send impostor team notification if multiple impostors
                         List<PlayerData> impostorList = registered.stream()
                                 .filter(PlayerData::isImpostor)
@@ -390,6 +398,10 @@ public class GameManager {
                                         .append(Component.text("IMPOSTOR").color(NamedTextColor.RED).decorate(TextDecoration.BOLD)));
                             }
                         }
+                        
+                        if (isResume && lastGameEndState != null) {
+                            turnManager.setResumeStateForNextTurn(lastGameEndState);
+                        }
 
                         turnManager.startNextTurn();
                         scoreboardManager.startUpdates();
@@ -404,6 +416,33 @@ public class GameManager {
         if (turnManager != null) turnManager.stopTurn();
         if (scoreboardManager != null) scoreboardManager.stopUpdates();
         if (voteManager != null) voteManager.cleanup();
+
+        // Create persistent state before ending
+        if (gameState == GameState.PLAYING && currentActivePlayerId != null) {
+            Player active = Bukkit.getPlayer(currentActivePlayerId);
+            if (active != null) {
+                lastGameEndState = new SavedGameState(
+                        currentActivePlayerId,
+                        currentTurnTimeLeft,
+                        turnNumber,
+                        active.getInventory().getContents(),
+                        active.getInventory().getArmorContents(),
+                        active.getInventory().getExtraContents(),
+                        active.getInventory().getHeldItemSlot(),
+                        active.getHealth(),
+                        active.getFoodLevel(),
+                        active.getSaturation(),
+                        active.getExhaustion(),
+                        active.getLocation(),
+                        active.getActivePotionEffects(),
+                        active.getFireTicks(),
+                        active.getFreezeTicks(),
+                        active.getVelocity()
+                );
+            }
+        } else if (savedGameState != null) {
+            lastGameEndState = savedGameState;
+        }
 
         gameState = GameState.LOBBY;
         currentActivePlayerId = null;
@@ -461,7 +500,7 @@ public class GameManager {
             Bukkit.broadcast(Component.text(impostorNames.toString() + " adalah impostor").color(NamedTextColor.GRAY));
             Bukkit.broadcast(Component.text(sep));
             for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_DEATH, 1f, 1f);
-            endGame();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
             return;
         }
 
@@ -473,7 +512,7 @@ public class GameManager {
             Bukkit.broadcast(Component.text("Objektif berhasil diselesaikan!").color(NamedTextColor.GRAY));
             Bukkit.broadcast(Component.text(sep));
             for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
-            endGame();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
             return;
         }
 
@@ -492,7 +531,7 @@ public class GameManager {
             Bukkit.broadcast(Component.text("Semua impostor telah tereliminasi!").color(NamedTextColor.GRAY));
             Bukkit.broadcast(Component.text(sep));
             for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
-            endGame();
+            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
         }
     }
 

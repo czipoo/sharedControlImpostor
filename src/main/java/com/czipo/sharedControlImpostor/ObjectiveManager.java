@@ -18,7 +18,9 @@ public class ObjectiveManager {
     // null means "use random" (default).
     private Integer fixedOneTemplateIndex = null;  // for one-objective + template
     private final List<Integer> fixedOwnTemplateIndices = new ArrayList<>();  // for own-objective + template
-    private String customObjectiveText = null;      // for custom mode (both one/own)
+    private CustomObjectiveData customOneObjective = null;
+    private final List<CustomObjectiveData> customOwnObjectives = new ArrayList<>();
+    private final Map<String, CustomObjectiveData> objectiveDataMap = new HashMap<>();
 
     public ObjectiveManager(GameManager gameManager) {
         this.gameManager = gameManager;
@@ -76,8 +78,9 @@ public class ObjectiveManager {
         if (oneMode) {
             // ---- ONE OBJECTIVE mode ----
             Objective selected;
-            if (objType.equals("custom") && customObjectiveText != null && !customObjectiveText.isEmpty()) {
-                selected = new Objective("custom_one", customObjectiveText, 1, true);
+            if (objType.equals("custom") && customOneObjective != null) {
+                selected = new Objective("custom_one", customOneObjective.getName(), customOneObjective.getAmount(), true);
+                objectiveDataMap.put("custom_one", customOneObjective);
             } else if (objType.equals("template") && fixedOneTemplateIndex != null
                     && fixedOneTemplateIndex >= 0 && fixedOneTemplateIndex < oneObjectivePool.size()) {
                 selected = oneObjectivePool.get(fixedOneTemplateIndex).cloneObjective();
@@ -92,12 +95,15 @@ public class ObjectiveManager {
             }
         } else {
             // ---- OWN OBJECTIVE mode ----
-            if (objType.equals("custom") && customObjectiveText != null && !customObjectiveText.isEmpty()) {
-                // Give each investigator the same custom text
-                for (PlayerData pd : investigators) {
+            if (objType.equals("custom") && !customOwnObjectives.isEmpty()) {
+                // Assign from customOwnObjectives one by one
+                for (int i = 0; i < investigators.size(); i++) {
+                    CustomObjectiveData data = customOwnObjectives.get(i % customOwnObjectives.size());
+                    String id = "custom_own_" + investigators.get(i).getPlayerId();
+                    objectiveDataMap.put(id, data);
                     List<Objective> list = new ArrayList<>();
-                    list.add(new Objective("custom_own_" + pd.getPlayerId(), customObjectiveText, 1, false));
-                    playerObjectives.put(pd.getPlayerId(), list);
+                    list.add(new Objective(id, data.getName(), data.getAmount(), false));
+                    playerObjectives.put(investigators.get(i).getPlayerId(), list);
                 }
             } else if (objType.equals("template") && !fixedOwnTemplateIndices.isEmpty()) {
                 // Diacak ke tiap investigator dari pilihan yang diset di dialog
@@ -144,12 +150,18 @@ public class ObjectiveManager {
     public List<Objective> getOneObjectivePool() { return oneObjectivePool; }
     public List<Objective> getOwnObjectivePool() { return ownObjectivePool; }
 
+    public void setCustomOneObjective(CustomObjectiveData data) { this.customOneObjective = data; }
+    public void addCustomOwnObjective(CustomObjectiveData data) { this.customOwnObjectives.add(data); }
+    public void clearCustomOwnObjectives() { this.customOwnObjectives.clear(); }
+    public List<CustomObjectiveData> getCustomOwnObjectives() { return customOwnObjectives; }
+    public CustomObjectiveData getCustomDataByObjective(Objective obj) { return objectiveDataMap.get(obj.getId()); }
+
     /**
      * Called by SettingsManager when "Set Template" is saved.
      * Stores the selected index so assignObjectives() can use it.
      */
-    public void setFixedTemplate(boolean oneMode, int index) {
-        if (oneMode) fixedOneTemplateIndex = index;
+    public void setFixedOneTemplateIndex(int index) {
+        this.fixedOneTemplateIndex = index;
     }
 
     /**
@@ -160,12 +172,6 @@ public class ObjectiveManager {
         fixedOwnTemplateIndices.addAll(indices);
     }
 
-    /**
-     * Called by SettingsManager when "Set Custom" is saved.
-     */
-    public void setCustomObjective(String text) {
-        this.customObjectiveText = text;
-    }
 
     public void handlePlayerElimination(UUID eliminatedPlayerId) {
         if (gameManager.getSettingsManager().isOneObjectiveMode()) return;

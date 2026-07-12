@@ -39,7 +39,7 @@ public class SettingsManager implements Listener {
     private final GameManager gameManager;
 
     private boolean oneLifeMode = false;
-    private boolean keepInventory = true;
+    private boolean createNewWorld = true;
     private boolean oneObjectiveMode = true; // default true
 
     // Objective dialog state
@@ -71,7 +71,7 @@ public class SettingsManager implements Listener {
     }
 
     public boolean isOneLifeMode() { return oneLifeMode; }
-    public boolean isKeepInventory() { return keepInventory; }
+    public boolean isCreateNewWorld() { return createNewWorld; }
     public boolean isOneObjectiveMode() { return oneObjectiveMode; }
     public String getObjectiveType() { return objectiveType; }
     public int getSelectedTemplateIndex() { return selectedTemplateIndex; }
@@ -133,24 +133,22 @@ public class SettingsManager implements Listener {
         totem.setItemMeta(totemMeta);
         inv.setItem(0, totem);
 
-        // Slot 1: Keep Inventory - use WHITE_BANNER to avoid bundle tooltip
-        ItemStack bundleItem = new ItemStack(Material.BUNDLE);
-        ItemMeta bundleMeta = bundleItem.getItemMeta();
-        if (keepInventory) {
-            bundleMeta.displayName(Component.text("Keep Inventory : ON").color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
+        // Slot 1: World Toggle
+        ItemStack worldToggle;
+        if (createNewWorld) {
+            worldToggle = new ItemStack(Material.GRASS_BLOCK);
+            ItemMeta meta = worldToggle.getItemMeta();
+            meta.displayName(Component.text("Buat world baru").color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(Component.text("Membuat world baru dan menghapus world sebelumnya").color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+            worldToggle.setItemMeta(meta);
         } else {
-            bundleMeta.displayName(Component.text("Keep Inventory : OFF").color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+            worldToggle = new ItemStack(Material.DIRT);
+            ItemMeta meta = worldToggle.getItemMeta();
+            meta.displayName(Component.text("Lanjutkan world sebelumnya").color(NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
+            meta.lore(List.of(Component.text("Melanjutkan world serta progress dari world sebelumnya").color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+            worldToggle.setItemMeta(meta);
         }
-        List<Component> bundleLore = new ArrayList<>();
-        if (oneLifeMode) {
-            bundleLore.add(Component.text("Tidak berguna jika one life on").color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
-        } else {
-            bundleLore.add(Component.text("Status keep inventory").color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
-        }
-        bundleMeta.lore(bundleLore);
-        bundleMeta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ADDITIONAL_TOOLTIP);
-        bundleItem.setItemMeta(bundleMeta);
-        inv.setItem(1, bundleItem);
+        inv.setItem(1, worldToggle);
 
         // Slot 2: Objective (opens dialog)
         ItemStack book = new ItemStack(Material.BOOK);
@@ -224,9 +222,9 @@ public class SettingsManager implements Listener {
                 oneLifeMode = !oneLifeMode;
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
                 openSettingsUI(player);
-            } else if (slot == 1) { // Keep Inventory
-                keepInventory = !keepInventory;
+            } else if (slot == 1) { // World Toggle
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
+                createNewWorld = !createNewWorld;
                 openSettingsUI(player);
             } else if (slot == 2) { // Objective — open dialog
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 1f, 1f);
@@ -324,7 +322,7 @@ public class SettingsManager implements Listener {
             String esc = displayNames.get(i).replace("\\", "\\\\").replace("\"", "\\\"");
             sb.append("{\"id\":\"" + i + "\",\"display\":\"" + esc + "\"}");
         }
-        sb.append("],\"initial\":\"" + selectedTemplateIndex + "\"}");
+        sb.append("],\"default\":" + selectedTemplateIndex + "}");
         return sb.toString();
     }
 
@@ -341,7 +339,7 @@ public class SettingsManager implements Listener {
                 String esc = displayNames.get(i).replace("\\", "\\\\").replace("\"", "\\\"");
                 sb.append("{\"id\":\"").append(i).append("\",\"display\":\"").append(esc).append("\"}");
             }
-            sb.append("],\"initial\":\"").append(init).append("\"}");
+            sb.append("],\"default\":").append(init).append("}");
         }
         return sb.toString();
     }
@@ -432,8 +430,13 @@ public class SettingsManager implements Listener {
     private void openObjectivePage5(Player player) {
         String json = "{"
             + "\"type\":\"minecraft:multi_action\","
-            + "\"title\":\"Objective\","
-            + "\"inputs\":[],"
+            + "\"title\":\"Objective (Custom)\","
+            + "\"inputs\":["
+            + "{\"type\":\"minecraft:text_input\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
+            + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}],\"default\":0},"
+            + "{\"type\":\"minecraft:text_input\",\"key\":\"target\",\"label\":\"Target ID\",\"placeholder\":\"Contoh: diamond_ore\"},"
+            + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
+            + "],"
             + "\"can_close_with_escape\":false,"
             + "\"exit_action\":{\"label\":\"Simpan\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
             + "\"actions\":["
@@ -447,8 +450,13 @@ public class SettingsManager implements Listener {
     private void openObjectivePage6(Player player) {
         String json = "{"
             + "\"type\":\"minecraft:multi_action\","
-            + "\"title\":\"Objective\","
-            + "\"inputs\":[],"
+            + "\"title\":\"Objective (Custom)\","
+            + "\"inputs\":["
+            + "{\"type\":\"minecraft:text_input\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
+            + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}],\"default\":0},"
+            + "{\"type\":\"minecraft:text_input\",\"key\":\"target\",\"label\":\"Target ID\",\"placeholder\":\"Contoh: diamond_ore\"},"
+            + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
+            + "],"
             + "\"can_close_with_escape\":false,"
             + "\"exit_action\":{\"label\":\"Simpan\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
             + "\"actions\":["
@@ -566,7 +574,6 @@ public class SettingsManager implements Listener {
         switch (idStr) {
             case "sci:obj_toggle_mode" -> {
                 oneObjectiveMode = !oneObjectiveMode;
-                selectedTemplateIndex = 0;
                 Bukkit.getScheduler().runTask(plugin, () -> openObjectiveDialog(player));
             }
             case "sci:obj_toggle_type" -> {
@@ -576,7 +583,6 @@ public class SettingsManager implements Listener {
                     case "template" -> objectiveType = "custom";
                     default -> objectiveType = "random";
                 }
-                selectedTemplateIndex = 0;
                 Bukkit.getScheduler().runTask(plugin, () -> openObjectiveDialog(player));
             }
             case "sci:obj_save_template" -> {
@@ -586,14 +592,50 @@ public class SettingsManager implements Listener {
                     String selected = (selectedTemplateIndex >= 0 && selectedTemplateIndex < names.size())
                             ? names.get(selectedTemplateIndex) : "?";
                     player.sendMessage(Component.text("Objective disimpan: §e" + selected).color(NamedTextColor.GREEN));
-                    gameManager.getObjectiveManager().setFixedTemplate(true, selectedTemplateIndex);
+                    gameManager.getObjectiveManager().setFixedOneTemplateIndex(selectedTemplateIndex);
                 } else {
-                    player.sendMessage(Component.text("Objective (Template Own) disimpan!").color(NamedTextColor.GREEN));
+                    List<String> names = getOwnObjectiveNames();
+                    player.sendMessage(Component.text("Objective disimpan:").color(NamedTextColor.GREEN));
+                    for (int idx : selectedOwnTemplateIndices) {
+                        String selected = (idx >= 0 && idx < names.size()) ? names.get(idx) : "?";
+                        player.sendMessage(Component.text("- " + selected).color(NamedTextColor.YELLOW));
+                    }
                     gameManager.getObjectiveManager().setFixedOwnTemplates(selectedOwnTemplateIndices);
                 }
             }
             case "sci:obj_save_custom" -> {
-                player.sendMessage(Component.text("Custom objective TBA!").color(NamedTextColor.RED));
+                if (view != null) {
+                    String name = "";
+                    try { name = view.getText("name"); } catch (Exception ignored) {}
+                    String action = "mining";
+                    try { 
+                        float actionIdx = view.getFloat("action");
+                        if (actionIdx == 1.0f) action = "pickup";
+                        else if (actionIdx == 2.0f) action = "kill";
+                    } catch (Exception ignored) {}
+                    String target = "";
+                    try { target = view.getText("target"); } catch (Exception ignored) {}
+                    int amount = 1;
+                    try { amount = view.getFloat("amount").intValue(); } catch (Exception ignored) {}
+                    
+                    if (name.isEmpty() || target.isEmpty()) {
+                        player.sendMessage(Component.text("Nama dan Target tidak boleh kosong!").color(NamedTextColor.RED));
+                        return;
+                    }
+                    
+                    CustomObjectiveData data = new CustomObjectiveData(name, action, target, amount);
+                    if (oneObjectiveMode) {
+                        gameManager.getObjectiveManager().setCustomOneObjective(data);
+                        player.sendMessage(Component.text("Objective custom disimpan: §e" + name).color(NamedTextColor.GREEN));
+                    } else {
+                        gameManager.getObjectiveManager().addCustomOwnObjective(data);
+                        player.sendMessage(Component.text("Objective custom ditambah: §e" + name).color(NamedTextColor.GREEN));
+                        // Re-open dialog to allow adding more
+                        Bukkit.getScheduler().runTask(plugin, () -> openObjectiveDialog(player));
+                        return; // don't close yet
+                    }
+                }
+                player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
             }
         }
     }

@@ -256,8 +256,6 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.text("/start ").color(NamedTextColor.GREEN).append(Component.text("- Mulai permainan").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/meeting ").color(NamedTextColor.GREEN).append(Component.text("- Memanggil meeting untuk meneliminasi player").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/endgame ").color(NamedTextColor.GREEN).append(Component.text("- Mengakhiri permainan").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/settimer <detik> ").color(NamedTextColor.GREEN).append(Component.text("- Set timer tiap giliran").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/setimpostor <count> ").color(NamedTextColor.GREEN).append(Component.text("- Set jumlah impostor").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/commandinfo ").color(NamedTextColor.GREEN).append(Component.text("- Lah ini").color(NamedTextColor.GRAY)));
         return true;
     }

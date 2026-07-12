@@ -56,12 +56,12 @@ public class Objective {
 
     public String getProgressDisplay() {
         if (isCompleted) {
-            return "§a" + description + " §a(Selesai) ✔";
+            return "§a✔ " + description;
         }
         if (targetCount > 1) {
-            return description + " [" + progress + "/" + targetCount + "]";
+            return "§e" + description + " [" + progress + "/" + targetCount + "]";
         }
-        return description;
+        return "§e" + description;
     }
     
     public Objective cloneObjective() {

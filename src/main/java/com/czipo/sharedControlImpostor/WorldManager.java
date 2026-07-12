@@ -38,8 +38,8 @@ public class WorldManager {
         // Load config for custom world names (optional)
         this.meetingWorldName = plugin.getConfig().getString("worlds.meeting", "meeting");
 
-        // Clean up old survival worlds on startup
-        cleanupOldSurvivalWorlds();
+        // Note: We no longer auto-cleanup old survival worlds on startup
+        // because we might want to resume them.
 
         // Find or create the meeting world
         initMeetingWorld();
@@ -101,6 +101,47 @@ public class WorldManager {
         }
     }
 
+    public boolean hasExistingSurvivalWorld() {
+        java.io.File worldContainer = plugin.getServer().getWorldContainer();
+        java.io.File[] folders = worldContainer.listFiles();
+        if (folders != null) {
+            for (java.io.File f : folders) {
+                if (f.isDirectory() && f.getName().startsWith("survival_game_")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public boolean loadExistingSurvivalWorld() {
+        java.io.File worldContainer = plugin.getServer().getWorldContainer();
+        java.io.File[] folders = worldContainer.listFiles();
+        java.io.File newest = null;
+        if (folders != null) {
+            for (java.io.File f : folders) {
+                if (f.isDirectory() && f.getName().startsWith("survival_game_")) {
+                    if (newest == null || f.lastModified() > newest.lastModified()) {
+                        newest = f;
+                    }
+                }
+            }
+        }
+        
+        if (newest != null) {
+            survivalWorldName = newest.getName();
+            survivalWorld = new WorldCreator(survivalWorldName)
+                    .environment(World.Environment.NORMAL)
+                    .createWorld();
+            if (survivalWorld != null) {
+                survivalWorld.setGameRule(GameRule.KEEP_INVENTORY, true);
+                survivalSpawn = survivalWorld.getSpawnLocation();
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * Create a new survival world for the game.
      * Each /start creates a fresh world.
@@ -113,6 +154,8 @@ public class WorldManager {
         if (survivalWorld != null) {
             unloadAndDeleteWorld(survivalWorld);
         }
+        
+        cleanupOldSurvivalWorlds(); // Delete all leftover folders on disk
 
         // Create new survival world
         survivalWorld = new WorldCreator(survivalWorldName)

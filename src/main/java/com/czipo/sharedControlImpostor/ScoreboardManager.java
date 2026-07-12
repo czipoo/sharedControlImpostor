@@ -126,9 +126,15 @@ public class ScoreboardManager {
                 if (objManager != null) {
                     java.util.List<Objective> objs = objManager.getPlayerObjectives(player.getUniqueId());
                     for (Objective obj : objs) {
-                        String text = "§e" + obj.getProgressDisplay();
-                        if (text.length() > 40) text = text.substring(0, 37) + "...";
-                        sidebarObjective.getScore(text).setScore(score--);
+                        String text = obj.getProgressDisplay();
+                        if (text.length() > 38) {
+                            int splitIdx = text.lastIndexOf(" ", 32);
+                            if (splitIdx == -1) splitIdx = 32;
+                            sidebarObjective.getScore(text.substring(0, splitIdx)).setScore(score--);
+                            sidebarObjective.getScore("  " + text.substring(splitIdx).trim()).setScore(score--);
+                        } else {
+                            sidebarObjective.getScore(text).setScore(score--);
+                        }
                     }
                 }
             } else {
@@ -138,9 +144,15 @@ public class ScoreboardManager {
                     if (shared != null && !shared.isEmpty()) {
                         sidebarObjective.getScore("§fObjektif:").setScore(score--);
                         for (Objective obj : shared) {
-                            String text = "§e" + obj.getProgressDisplay();
-                            if (text.length() > 40) text = text.substring(0, 37) + "...";
-                            sidebarObjective.getScore(text).setScore(score--);
+                            String text = obj.getProgressDisplay();
+                            if (text.length() > 38) {
+                                int splitIdx = text.lastIndexOf(" ", 32);
+                                if (splitIdx == -1) splitIdx = 32;
+                                sidebarObjective.getScore(text.substring(0, splitIdx)).setScore(score--);
+                                sidebarObjective.getScore("  " + text.substring(splitIdx).trim()).setScore(score--);
+                            } else {
+                                sidebarObjective.getScore(text).setScore(score--);
+                            }
                         }
                     }
                 }

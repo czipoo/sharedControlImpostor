@@ -334,15 +334,9 @@ public class GameListener implements Listener {
                 return;
             }
             
-            if (settings.isKeepInventory()) {
-                event.setKeepInventory(true);
-                event.setKeepLevel(true);
-                event.setDroppedExp(0);
-                event.getDrops().clear();
-            } else {
-                event.setKeepInventory(false);
-                event.setKeepLevel(false);
-            }
+            // Just drop items (default survival behavior)
+            event.setKeepInventory(false);
+            event.setKeepLevel(false);
         } else {
             event.setKeepInventory(true);
             event.setKeepLevel(true);

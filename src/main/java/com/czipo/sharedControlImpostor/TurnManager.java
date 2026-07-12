@@ -27,14 +27,21 @@ public class TurnManager {
 
     private final SharedControlImpostor plugin;
     private final GameManager gameManager;
+
+    private boolean running = false;
     private BukkitRunnable turnTimerTask;
     private BukkitRunnable syncTask;
-    private boolean running = false;
+    
+    private GameManager.SavedGameState resumeStateForNextTurn = null;
     private volatile boolean syncing = false; // Flag to prevent concurrent syncs
 
     public TurnManager(SharedControlImpostor plugin, GameManager gameManager) {
         this.plugin = plugin;
         this.gameManager = gameManager;
+    }
+    
+    public void setResumeStateForNextTurn(GameManager.SavedGameState state) {
+        this.resumeStateForNextTurn = state;
     }
 
     /**
@@ -89,9 +96,30 @@ public class TurnManager {
         // Teleport active player to survival world if it's the very first turn!
         if (gameManager.getTurnNumber() == 1 && gameManager.isWaitingForFirstMove()) {
             if (activePlayer != null) {
-                org.bukkit.Location survivalSpawn = gameManager.getWorldManager().getSurvivalSpawn();
-                if (survivalSpawn != null) {
-                    activePlayer.teleport(survivalSpawn);
+                if (resumeStateForNextTurn != null) {
+                    if (resumeStateForNextTurn.position != null) {
+                        activePlayer.teleport(resumeStateForNextTurn.position);
+                        activePlayer.playSound(resumeStateForNextTurn.position, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+                    }
+                    if (resumeStateForNextTurn.inventory != null) activePlayer.getInventory().setContents(resumeStateForNextTurn.inventory);
+                    if (resumeStateForNextTurn.armorContents != null) activePlayer.getInventory().setArmorContents(resumeStateForNextTurn.armorContents);
+                    if (resumeStateForNextTurn.extraContents != null) activePlayer.getInventory().setExtraContents(resumeStateForNextTurn.extraContents);
+                    activePlayer.getInventory().setHeldItemSlot(resumeStateForNextTurn.heldItemSlot);
+                    activePlayer.setHealth(resumeStateForNextTurn.health);
+                    activePlayer.setFoodLevel(resumeStateForNextTurn.foodLevel);
+                    activePlayer.setSaturation(resumeStateForNextTurn.saturation);
+                    activePlayer.setExhaustion(resumeStateForNextTurn.exhaustion);
+                    activePlayer.getActivePotionEffects().forEach(e -> activePlayer.removePotionEffect(e.getType()));
+                    if (resumeStateForNextTurn.potionEffects != null) resumeStateForNextTurn.potionEffects.forEach(activePlayer::addPotionEffect);
+                    activePlayer.setFireTicks(resumeStateForNextTurn.fireTicks);
+                    activePlayer.setFreezeTicks(resumeStateForNextTurn.freezeTicks);
+                    resumeStateForNextTurn = null;
+                } else {
+                    org.bukkit.Location survivalSpawn = gameManager.getWorldManager().getSurvivalSpawn();
+                    if (survivalSpawn != null) {
+                        activePlayer.teleport(survivalSpawn);
+                        activePlayer.playSound(survivalSpawn, org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f);
+                    }
                 }
             }
         }
@@ -404,6 +432,7 @@ public class TurnManager {
         
                         player.setSpectatorTarget(null); // Pastikan status server bersih dulu
                         player.teleport(activePlayer.getLocation()); // Pindahkan fisik penonton ke target
+                        player.playSound(activePlayer.getLocation(), org.bukkit.Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.0f); // Teleport sound for spectator
         
                         // Beri waktu 5 tick (250ms) agar klien pemain punya waktu untuk memuat chunk dunia
                         // sebelum kamera dipaksa menempel.
