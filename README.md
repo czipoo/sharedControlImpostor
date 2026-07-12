@@ -26,7 +26,7 @@ Plugin Minecraft mini-game dimana semua pemain bermain **bergantian** mengontrol
 ## Alur Permainan
 
 1. **Registrasi pemain** dengan `/regis [player]` atau `/regisall`
-2. **Konfigurasi** settings melalui item **Settings** (Test Block) di inventory — hanya untuk OP
+2. **Konfigurasi** settings melalui item **Settings** di inventory — hanya untuk OP
 3. **Mulai game** dengan `/start`
 4. Pemain bermain **bergantian** di survival world
 5. Saat giliran habis, karakter berpindah ke pemain berikutnya beserta seluruh **state** (inventory, health, posisi, dll.)
@@ -46,9 +46,9 @@ Plugin Minecraft mini-game dimana semua pemain bermain **bergantian** mengontrol
 | `/start` | Mulai game | OP |
 | `/endgame` | Akhiri game dan kembali ke lobby | OP |
 | `/meeting` | Panggil meeting (voting) | Semua pemain |
-| `/skip` | Lewati giliran aktifmu | Pemain aktif |
+| `/skip` | Lewati giliran aktif saat ini | OP |
 | `/listplayer` | Lihat daftar pemain terdaftar | Semua pemain |
-| `/commandinfo` | Lihat info command dan settings | OP |
+| `/commandinfo` | Lihat info daftar command  | OP |
 
 ---
 
@@ -58,11 +58,11 @@ Klik kanan item **Settings** untuk membuka menu konfigurasi.
 
 | Slot | Item | Fungsi |
 |------|------|--------|
-| 0 | Totem | Toggle **One Life** mode (mati = impostor menang) |
-| 1 | Grass/Dirt Block | Toggle **Buat world baru** / **Lanjutkan world sebelumnya** |
-| 2 | Clock | Konfigurasi **Timer** (swap, voting, cooldown meeting) |
-| 3 | Target | Konfigurasi **Objective** (mode, type, template, custom) |
-| 4 | Name Tag | Konfigurasi **jumlah impostor** |
+| 1 | Totem | Toggle **One Life** mode (mati = impostor menang) |
+| 2 | Grass/Dirt Block | Toggle **Buat world baru** / **Lanjutkan world sebelumnya** |
+| 3 | Book | Konfigurasi **Objective** (mode, type, template, custom) |
+| 4 | Player Head | Konfigurasi **jumlah impostor** |
+| 5 | Clock | Konfigurasi **Timer** (swap, voting, cooldown meeting) |
 
 ---
 
@@ -82,7 +82,7 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 |------|-----------|
 | **Random** | Objektif dipilih secara acak dari pool template |
 | **Template** | Pilih sendiri objektif dari daftar yang tersedia |
-| **Custom** | Buat objektif custom dengan 4 input: Nama, Aksi (Mining/Pickup/Kill), Target ID, dan Jumlah |
+| **Custom** | Buat objektif custom dengan 4 input: Nama, Aksi (Mining/Pickup/Kill), Target (nama block/item/mob), dan Jumlah |
 
 ### Contoh Custom Objective
 - Mining 32 Diamond Ore → Aksi: `Mining Block`, Target: `diamond_ore`, Jumlah: `32`
@@ -95,44 +95,44 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 
 ## Objektif Template (One Objective)
 
-| ID | Deskripsi |
+| No | Deskripsi |
 |----|-----------|
-| one_nether | Masuk ke dimensi nether |
-| one_piglin_pearl | Dapatkan ender pearl dari piglin |
-| one_ghast_tear | Dapatkan 1 Ghast Tear |
-| one_ancient_debris | Dapatkan 1 Ancient Debris |
-| one_wither_skull | Dapatkan 1 Wither Skeleton Skull |
-| one_breeze | Bunuh 5 Breeze |
-| one_elder_guardian | Bunuh Elder Guardian |
-| one_warden_death | Bunuh diri dengan Warden |
-| one_ender_dragon | Kalahkan Ender Dragon |
-| one_elytra | Dapatkan Elytra |
+| 1 | Masuk ke dimensi nether |
+| 2 | Dapatkan ender pearl dari piglin |
+| 3 | Dapatkan 1 Ghast Tear |
+| 4 | Dapatkan 1 Ancient Debris |
+| 5 | Dapatkan 1 Wither Skeleton Skull |
+| 6 | Bunuh 5 Breeze |
+| 7 | Bunuh Elder Guardian |
+| 8 | Bunuh diri dengan Warden |
+| 9 | Kalahkan Ender Dragon |
+| 10 | Dapatkan Elytra |
 
 ## Objektif Template (Own Objective)
 
-| ID | Deskripsi |
+| No | Deskripsi |
 |----|-----------|
-| own_trade_villager | Trade dengan Villager |
-| own_enchant | Gunakan Enchanting Table |
-| own_tame_cat | Tame Cat |
-| own_axolotl_bucket | Dapatkan Bucket of Axolotl |
-| own_hit_golem | Pukul Iron Golem |
-| own_ride_horse | Tunggangi Horse sejauh 100 block |
-| own_pufferfish | Makan Pufferfish |
-| own_bedrock_height | Capai ketinggian bedrock |
-| own_mlg_water | MLG Water Bucket dari ketinggian 20 block |
-| own_gapple | Makan 1 Golden Apple |
-| own_chicken_jockey | Bunuh Chicken Jockey |
-| own_music_disc | Dapatkan Music Disc dari Creeper |
-| own_mine_stone | Mining 64 stone |
-| own_eat_cake | Makan Cake |
-| own_5_wool | Kumpulkan 5 warna Wool berbeda |
-| own_sprint_500 | Berlari sejauh 500 block |
-| own_iron_armor | Pakai full set Iron Armor |
-| own_honey_bottle | Dapatkan honey bottle |
-| own_5_biomes | Pergi ke 5 biome berbeda |
-| own_ignite_tnt | Nyalakan 5 TNT |
-| own_nether | Masuk ke Nether |
+| 1 | Trade dengan Villager |
+| 2 | Gunakan Enchanting Table |
+| 3 | Tame Cat |
+| 4 | Dapatkan Bucket of Axolotl |
+| 5 | Pukul Iron Golem |
+| 6 | Tunggangi Horse sejauh 100 block |
+| 7 | Makan Pufferfish |
+| 8 | Capai ketinggian bedrock |
+| 9 | MLG Water Bucket dari ketinggian 20 block |
+| 10 | Makan 1 Golden Apple |
+| 11 | Bunuh Chicken Jockey |
+| 12 | Dapatkan Music Disc dari Creeper |
+| 13 | Mining 64 stone |
+| 14 | Makan Cake |
+| 15 | Kumpulkan 5 warna Wool berbeda |
+| 16 | Berlari sejauh 500 block |
+| 17 | Pakai full set Iron Armor |
+| 18 | Dapatkan honey bottle |
+| 19 | Pergi ke 5 biome berbeda |
+| 20 | Nyalakan 5 TNT |
+| 21 | Masuk ke Nether |
 
 ---
 
@@ -140,8 +140,7 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 
 - Saat `/start` dengan **Buat world baru** dipilih: survival world baru dibuat dan world lama dihapus
 - Saat `/start` dengan **Lanjutkan world sebelumnya**: world survival terakhir dimuat kembali beserta posisi dan inventory pemain aktif terakhir
-- `/endgame` **tidak** menghapus world, hanya mengembalikan semua pemain ke lobby
-- `keepInventory` diset **true** secara default di semua survival world
+- `keepInventory` **true** secara default
 
 ---
 
@@ -150,8 +149,7 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 - Gunakan `/meeting` untuk memanggil voting
 - Ada **cooldown** yang bisa dikonfigurasi via Settings
 - Cooldown mulai berjalan setelah pemain aktif **bergerak** pertama kali setelah meeting selesai
-- Setiap pemain hanya bisa memanggil **1 meeting** per sesi game
-- Jika voting seri (suara sama banyak), tidak ada yang dieliminasi
+- Setiap pemain hanya bisa memanggil **1 meeting**, sampai semua pemain yang tersisa sudah memanggil meeting
 
 ---
 
