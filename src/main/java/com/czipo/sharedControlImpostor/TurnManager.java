@@ -47,11 +47,14 @@ public class TurnManager {
     /**
      * Skip the current turn.
      */
-    public void skipCurrentTurn(Player caller) {
+    public void skipCurrentTurn() {
         if (!gameManager.isPlaying()) return;
         Player activePlayer = gameManager.getCurrentActivePlayer();
         String activeName = activePlayer != null ? activePlayer.getName() : "Player aktif";
-        Bukkit.broadcast(Component.text("Giliran " + activeName + " dilewati oleh " + caller.getName() + "!").color(NamedTextColor.YELLOW));
+        Bukkit.broadcast(Component.text("Skip giliran " + activeName).color(NamedTextColor.YELLOW));
+        stopTurnTimer();
+        stopSyncTask();
+        stopSpectatorMode();
         startNextTurn();
     }
 

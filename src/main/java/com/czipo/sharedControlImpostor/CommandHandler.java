@@ -276,11 +276,13 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             player.sendMessage(Component.text("Game belum dimulai!").color(NamedTextColor.RED));
             return true;
         }
-        if (player.getWorld().equals(gameManager.getWorldManager().getMeetingWorld())) {
+        // Safe null check for meeting world
+        org.bukkit.World meetingWorld = gameManager.getWorldManager().getMeetingWorld();
+        if (meetingWorld != null && player.getWorld().equals(meetingWorld)) {
             player.sendMessage(Component.text("Tidak bisa skip giliran saat di world meeting!").color(NamedTextColor.RED));
             return true;
         }
-        gameManager.getTurnManager().skipCurrentTurn(player);
+        gameManager.getTurnManager().skipCurrentTurn();
         return true;
     }
 

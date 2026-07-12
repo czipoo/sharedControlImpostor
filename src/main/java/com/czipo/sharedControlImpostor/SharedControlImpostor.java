@@ -58,6 +58,7 @@ public final class SharedControlImpostor extends JavaPlugin {
         registerCommand("endgame", commandHandler);
         registerCommand("listplayer", commandHandler);
         registerCommand("commandinfo", commandHandler);
+        registerCommand("skip", commandHandler);
 
         getLogger().info("Shared Control Impostor plugin enabled!");
         getLogger().info("Use /commandinfo for a list of commands.");
@@ -69,7 +70,7 @@ public final class SharedControlImpostor extends JavaPlugin {
             String pluginName = getName().toLowerCase();
             java.util.List<String> commandNames = java.util.List.of(
                 "regis", "regisall", "unregis", "start", "meeting",
-                "settimer", "setimpostor", "endgame", "listplayer", "commandinfo"
+                "settimer", "setimpostor", "endgame", "listplayer", "commandinfo", "skip"
             );
             for (String name : commandNames) {
                 org.bukkit.command.Command c = commandMap.getCommand(pluginName + ":" + name);
