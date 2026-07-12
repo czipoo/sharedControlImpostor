@@ -46,6 +46,7 @@ public class SettingsManager implements Listener {
     private String objectiveType = "random"; // "random", "template", "custom"
     private int selectedTemplateIndex = 0;
     private final List<Integer> selectedOwnTemplateIndices = new ArrayList<>();
+    private int currentOwnCustomIndex = 0;
     private String customObjectiveText = "";
 
     public SettingsManager(SharedControlImpostor plugin, GameManager gameManager) {
@@ -430,11 +431,11 @@ public class SettingsManager implements Listener {
     private void openObjectivePage5(Player player) {
         String json = "{"
             + "\"type\":\"minecraft:multi_action\","
-            + "\"title\":\"Objective (Custom)\","
+            + "\"title\":\"Objective\","
             + "\"inputs\":["
-            + "{\"type\":\"minecraft:text_input\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
+            + "{\"type\":\"minecraft:text\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
             + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}],\"default\":0},"
-            + "{\"type\":\"minecraft:text_input\",\"key\":\"target\",\"label\":\"Target ID\",\"placeholder\":\"Contoh: diamond_ore\"},"
+            + "{\"type\":\"minecraft:text\",\"key\":\"target\",\"label\":\"Target (contoh: diamond_ore)\"},"
             + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
             + "],"
             + "\"can_close_with_escape\":false,"
@@ -450,18 +451,18 @@ public class SettingsManager implements Listener {
     private void openObjectivePage6(Player player) {
         String json = "{"
             + "\"type\":\"minecraft:multi_action\","
-            + "\"title\":\"Objective (Custom)\","
+            + "\"title\":\"Objective\","
             + "\"inputs\":["
-            + "{\"type\":\"minecraft:text_input\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
-            + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}],\"default\":0},"
-            + "{\"type\":\"minecraft:text_input\",\"key\":\"target\",\"label\":\"Target ID\",\"placeholder\":\"Contoh: diamond_ore\"},"
+            + "{\"type\":\"minecraft:text\",\"key\":\"name\",\"label\":\"Nama Objektif\"},"
+            + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}]},"
+            + "{\"type\":\"minecraft:text\",\"key\":\"target\",\"label\":\"Target (contoh: diamond_ore)\"},"
             + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
             + "],"
             + "\"can_close_with_escape\":false,"
-            + "\"exit_action\":{\"label\":\"Simpan\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
+            + "\"exit_action\":{\"label\":\"Simpan\",\"tooltip\":\"NOTE : Untuk set custom di mode own objective tambahkan objektifnya satu per satu\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
             + "\"actions\":["
             + "{\"label\":\"Mode : Own Objective\",\"tooltip\":\"Tiap Investigator akan mendapat objektifnya masing-masing\",\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_toggle_mode\"}},"
-            + "{\"label\":\"Set Custom\",\"tooltip\":\"TBA\",\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_toggle_type\"}}"
+            + "{\"label\":\"Set Custom\",\"tooltip\":\"Buat objektifmu sendiri\",\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_toggle_type\"}}"
             + "]}";
         showDialog(player, json);
     }
@@ -628,11 +629,24 @@ public class SettingsManager implements Listener {
                         gameManager.getObjectiveManager().setCustomOneObjective(data);
                         player.sendMessage(Component.text("Objective custom disimpan: §e" + name).color(NamedTextColor.GREEN));
                     } else {
-                        gameManager.getObjectiveManager().addCustomOwnObjective(data);
-                        player.sendMessage(Component.text("Objective custom ditambah: §e" + name).color(NamedTextColor.GREEN));
-                        // Re-open dialog to allow adding more
-                        Bukkit.getScheduler().runTask(plugin, () -> openObjectiveDialog(player));
-                        return; // don't close yet
+                        int playerCount = gameManager.getRegisteredPlayerCount();
+                        if (playerCount == 0) playerCount = Math.max(3, Bukkit.getOnlinePlayers().size());
+                        int investigatorCount = Math.max(1, playerCount - gameManager.getImpostorCount());
+                        
+                        int displayIndex = currentOwnCustomIndex + 1;
+                        gameManager.getObjectiveManager().setCustomOwnObjective(currentOwnCustomIndex, data);
+                        
+                        String msg = "Objective custom " + displayIndex + " disimpan:\n"
+                                   + "Nama: " + name + "\n"
+                                   + "Aksi: " + (action.equals("mining") ? "Mining" : (action.equals("pickup") ? "Dapatkan Item" : "Bunuh Mob")) + "\n"
+                                   + "Target: " + target + "\n"
+                                   + "Jumlah: " + amount;
+                        player.sendMessage(Component.text(msg).color(NamedTextColor.GREEN));
+                        
+                        currentOwnCustomIndex++;
+                        if (currentOwnCustomIndex >= investigatorCount) {
+                            currentOwnCustomIndex = 0;
+                        }
                     }
                 }
                 player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);

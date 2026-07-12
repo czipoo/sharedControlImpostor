@@ -45,6 +45,17 @@ public class TurnManager {
     }
 
     /**
+     * Skip the current turn.
+     */
+    public void skipCurrentTurn(Player caller) {
+        if (!gameManager.isPlaying()) return;
+        Player activePlayer = gameManager.getCurrentActivePlayer();
+        String activeName = activePlayer != null ? activePlayer.getName() : "Player aktif";
+        Bukkit.broadcast(Component.text("Giliran " + activeName + " dilewati oleh " + caller.getName() + "!").color(NamedTextColor.YELLOW));
+        startNextTurn();
+    }
+
+    /**
      * Start the next turn - picks a random active player.
      */
     public void startNextTurn() {

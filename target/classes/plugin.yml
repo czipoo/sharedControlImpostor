@@ -37,6 +37,10 @@ commands:
     description: Show command information and current settings
     usage: /commandinfo
     permission: sci.commandinfo
+  skip:
+    description: Skip your active turn
+    usage: /skip
+    permission: sci.skip
 
 permissions:
   sci.regis:
@@ -65,4 +69,7 @@ permissions:
     default: op
   sci.settimer:
     description: Internal timer dialog callback
+    default: op
+  sci.skip:
+    description: Allows skipping active turn
     default: op

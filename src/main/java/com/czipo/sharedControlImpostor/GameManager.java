@@ -321,8 +321,8 @@ public class GameManager {
                                         net.kyori.adventure.title.Title.Times.times(java.time.Duration.ZERO, java.time.Duration.ofMillis(300), java.time.Duration.ZERO)
                                 ));
                             }
+                            player.playSound(player.getLocation(), org.bukkit.Sound.UI_BUTTON_CLICK, 0.5f, 1.5f);
                         }
-                        player.playSound(player.getLocation(), org.bukkit.Sound.UI_BUTTON_CLICK, 0.5f, 1.5f);
                     }
                     ticks += 2;
                 } else {

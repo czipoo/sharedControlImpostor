@@ -22,8 +22,7 @@ import java.util.stream.Collectors;
  * /unregis - Unregister player from the game
  * /start - Start the game
  * /meeting - Call a meeting during gameplay
- * /settimer - Set turn timer (default 15 seconds)
- * /setimpostor - Set number of impostors
+ * /skip - Skip the active turn
  * /endgame - End the current game
  * /commandinfo - Show command information
  */
@@ -58,6 +57,8 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 return handleListPlayer(sender);
             case "commandinfo":
                 return handleCommandInfo(sender);
+            case "skip":
+                return handleSkip(sender);
 
             default:
                 sender.sendMessage(Component.text("Command tidak tersedia.").color(NamedTextColor.RED));
@@ -255,8 +256,31 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.text("/listplayer ").color(NamedTextColor.GREEN).append(Component.text("- Lihat daftar pemain terdaftar").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/start ").color(NamedTextColor.GREEN).append(Component.text("- Mulai permainan").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/meeting ").color(NamedTextColor.GREEN).append(Component.text("- Memanggil meeting untuk meneliminasi player").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/skip ").color(NamedTextColor.GREEN).append(Component.text("- Lewati giliranmu").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/endgame ").color(NamedTextColor.GREEN).append(Component.text("- Mengakhiri permainan").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/commandinfo ").color(NamedTextColor.GREEN).append(Component.text("- Lah ini").color(NamedTextColor.GRAY)));
+        return true;
+    }
+
+    // ===== /skip =====
+    private boolean handleSkip(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("Hanya player yang bisa menggunakan command ini.").color(NamedTextColor.RED));
+            return true;
+        }
+        if (!player.isOp()) {
+            player.sendMessage(Component.text("Hanya OP yang bisa menggunakan command ini!").color(NamedTextColor.RED));
+            return true;
+        }
+        if (!gameManager.isPlaying()) {
+            player.sendMessage(Component.text("Game belum dimulai!").color(NamedTextColor.RED));
+            return true;
+        }
+        if (player.getWorld().equals(gameManager.getWorldManager().getMeetingWorld())) {
+            player.sendMessage(Component.text("Tidak bisa skip giliran saat di world meeting!").color(NamedTextColor.RED));
+            return true;
+        }
+        gameManager.getTurnManager().skipCurrentTurn(player);
         return true;
     }
 
@@ -278,22 +302,6 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 }
                 break;
 
-            case "settimer":
-                if (args.length == 1) {
-                    completions.addAll(Arrays.asList("15", "30", "45", "60", "90"));
-                }
-                break;
-
-            case "setimpostor":
-                if (args.length == 1) {
-                    int max = gameManager.getMaxImpostorCount(Math.max(
-                            gameManager.getRegisteredPlayerCount(),
-                            plugin.getServer().getOnlinePlayers().size()));
-                    for (int i = 1; i <= max; i++) {
-                        completions.add(String.valueOf(i));
-                    }
-                }
-                break;
 
             case "meeting":
             case "start":

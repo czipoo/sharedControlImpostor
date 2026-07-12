@@ -96,14 +96,21 @@ public class ObjectiveManager {
         } else {
             // ---- OWN OBJECTIVE mode ----
             if (objType.equals("custom") && !customOwnObjectives.isEmpty()) {
-                // Assign from customOwnObjectives one by one
-                for (int i = 0; i < investigators.size(); i++) {
-                    CustomObjectiveData data = customOwnObjectives.get(i % customOwnObjectives.size());
-                    String id = "custom_own_" + investigators.get(i).getPlayerId();
-                    objectiveDataMap.put(id, data);
-                    List<Objective> list = new ArrayList<>();
-                    list.add(new Objective(id, data.getName(), data.getAmount(), false));
-                    playerObjectives.put(investigators.get(i).getPlayerId(), list);
+                // Filter out nulls
+                List<CustomObjectiveData> validCustoms = new ArrayList<>();
+                for (CustomObjectiveData c : customOwnObjectives) {
+                    if (c != null) validCustoms.add(c);
+                }
+                if (!validCustoms.isEmpty()) {
+                    // Assign from valid custom objectives one by one
+                    for (int i = 0; i < investigators.size(); i++) {
+                        CustomObjectiveData data = validCustoms.get(i % validCustoms.size());
+                        String id = "custom_own_" + investigators.get(i).getPlayerId();
+                        objectiveDataMap.put(id, data);
+                        List<Objective> list = new ArrayList<>();
+                        list.add(new Objective(id, data.getName(), data.getAmount(), false));
+                        playerObjectives.put(investigators.get(i).getPlayerId(), list);
+                    }
                 }
             } else if (objType.equals("template") && !fixedOwnTemplateIndices.isEmpty()) {
                 // Diacak ke tiap investigator dari pilihan yang diset di dialog
@@ -152,6 +159,12 @@ public class ObjectiveManager {
 
     public void setCustomOneObjective(CustomObjectiveData data) { this.customOneObjective = data; }
     public void addCustomOwnObjective(CustomObjectiveData data) { this.customOwnObjectives.add(data); }
+    public void setCustomOwnObjective(int index, CustomObjectiveData data) {
+        while (this.customOwnObjectives.size() <= index) {
+            this.customOwnObjectives.add(null);
+        }
+        this.customOwnObjectives.set(index, data);
+    }
     public void clearCustomOwnObjectives() { this.customOwnObjectives.clear(); }
     public List<CustomObjectiveData> getCustomOwnObjectives() { return customOwnObjectives; }
     public CustomObjectiveData getCustomDataByObjective(Objective obj) { return objectiveDataMap.get(obj.getId()); }

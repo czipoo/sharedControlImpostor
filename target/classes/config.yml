@@ -22,15 +22,4 @@ game:
   # Will be auto-balanced based on player count
   default-impostor-count: 1
 
-# Objective Settings
-objectives:
-  # List of objectives that will be randomly selected
-  # Format: type|description|clue|material|count
-  # Available types: CHOP_LOGS, MINE_ORE, CRAFT_ITEM, PLACE_BLOCKS, KILL_MOB
-  # Materials: Use Minecraft material names (e.g., COBBLESTONE, OAK_LOG, etc.)
-  enabled:
-    - "MINE_ORE|Mine {count} cobblestone|Stone must be gathered from underground...|COBBLESTONE|10"
-    - "CHOP_LOGS|Chop {count} oak logs|Something wooden needs collecting...|OAK_LOG|5"
-    - "CRAFT_ITEM|Craft a wooden pickaxe|A tool must be forged from basic materials...|WOODEN_PICKAXE|1"
-    - "MINE_ORE|Mine {count} diamonds|Something shiny and blue needs to be mined...|DIAMOND_ORE|3"
-    - "CRAFT_ITEM|Craft an iron pickaxe|A stronger tool must be forged...|IRON_PICKAXE|1"
+

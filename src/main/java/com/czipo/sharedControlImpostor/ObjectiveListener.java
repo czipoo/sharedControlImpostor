@@ -43,6 +43,7 @@ public class ObjectiveListener implements Listener {
 
     private void addProgress(Player player, String objectiveId, int amount) {
         if (!gameManager.isPlaying()) return;
+        if (!player.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) return;
         PlayerData pd = gameManager.getPlayerData(player);
         if (pd == null || !pd.isActive() || pd.isImpostor()) return;
         
@@ -90,6 +91,7 @@ public class ObjectiveListener implements Listener {
     
     private boolean hasObjective(Player player, String objectiveId) {
         if (!gameManager.isPlaying()) return false;
+        if (!player.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) return false;
         PlayerData pd = gameManager.getPlayerData(player);
         if (pd == null || !pd.isActive() || pd.isImpostor()) return false;
         
@@ -101,6 +103,10 @@ public class ObjectiveListener implements Listener {
     
     private Objective getObjective(Player player, String objectiveId) {
         if (!gameManager.isPlaying()) return null;
+        if (!player.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) return null;
+        PlayerData pd = gameManager.getPlayerData(player);
+        if (pd == null || !pd.isActive() || pd.isImpostor()) return null;
+        
         List<Objective> objectives = gameManager.getObjectiveManager().getPlayerObjectives(player.getUniqueId());
         if (objectives == null) return null;
         for (Objective obj : objectives) {
