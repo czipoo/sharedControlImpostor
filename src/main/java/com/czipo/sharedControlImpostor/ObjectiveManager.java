@@ -38,10 +38,11 @@ public class ObjectiveManager {
         oneObjectivePool.add(new Objective("one_warden_death", "Bunuh diri dengan Warden", 1, true));
         oneObjectivePool.add(new Objective("one_ender_dragon", "Kalahkan Ender Dragon", 1, true));
         oneObjectivePool.add(new Objective("one_elytra", "Dapatkan Elytra", 1, true));
-        
-        ownObjectivePool.add(new Objective("own_trade_villager", "Trade dengan Villager", 1, false));
+        oneObjectivePool.add(new Objective("one_10_biomes", "Jelajahi 10 biome berbeda", 10, true));
+
+        ownObjectivePool.add(new Objective("own_32_iron", "Kumpulkan 32 Iron Ingot", 32, false));
         ownObjectivePool.add(new Objective("own_enchant", "Gunakan Enchanting Table", 1, false));
-        ownObjectivePool.add(new Objective("own_tame_cat", "Tame Cat", 1, false));
+        ownObjectivePool.add(new Objective("own_tame_cat_wolf", "Tame Kucing atau Serigala", 1, false));
         ownObjectivePool.add(new Objective("own_axolotl_bucket", "Dapatkan Bucket of Axolotl", 1, false));
         ownObjectivePool.add(new Objective("own_hit_golem", "Pukul Iron Golem", 1, false));
         ownObjectivePool.add(new Objective("own_ride_horse", "Tunggangi Horse sejauh 100 block", 1, false));
@@ -51,15 +52,16 @@ public class ObjectiveManager {
         ownObjectivePool.add(new Objective("own_gapple", "Makan 1 Golden Apple", 1, false));
         ownObjectivePool.add(new Objective("own_chicken_jockey", "Bunuh Chicken Jockey", 1, false));
         ownObjectivePool.add(new Objective("own_music_disc", "Dapatkan Music Disc dari Creeper", 1, false));
-        ownObjectivePool.add(new Objective("own_mine_stone", "Mining 64 stone", 64, false));
+        ownObjectivePool.add(new Objective("own_mine_stone", "Mining 64 Stone", 64, false));
         ownObjectivePool.add(new Objective("own_eat_cake", "Makan Cake", 1, false));
         ownObjectivePool.add(new Objective("own_5_wool", "Kumpulkan 5 warna Wool berbeda", 5, false));
         ownObjectivePool.add(new Objective("own_sprint_500", "Berlari sejauh 500 block", 500, false));
         ownObjectivePool.add(new Objective("own_iron_armor", "Pakai full set Iron Armor", 1, false));
         ownObjectivePool.add(new Objective("own_honey_bottle", "Dapatkan honey bottle", 1, false));
-        ownObjectivePool.add(new Objective("own_5_biomes", "Pergi ke 5 biome berbeda", 5, false));
+        ownObjectivePool.add(new Objective("own_craft_diamond_pickaxe", "Craft Diamond Pickaxe", 1, false));
+        ownObjectivePool.add(new Objective("own_kill_10_zombie", "Bunuh 10 Zombie", 10, false));
         ownObjectivePool.add(new Objective("own_ignite_tnt", "Nyalakan 5 TNT", 5, false));
-        ownObjectivePool.add(new Objective("own_nether", "Masuk ke Nether", 1, false));
+        ownObjectivePool.add(new Objective("own_nether", "Masuk ke dimensi Nether", 1, false));
     }
 
     public void assignObjectives() {
@@ -79,8 +81,13 @@ public class ObjectiveManager {
             // ---- ONE OBJECTIVE mode ----
             Objective selected;
             if (objType.equals("custom") && customOneObjective != null) {
-                selected = new Objective("custom_one", customOneObjective.getName(), customOneObjective.getAmount(), true);
-                objectiveDataMap.put("custom_one", customOneObjective);
+                // Check if custom objective is "-" (empty), if so assign random
+                if (customOneObjective.getName().equals("-")) {
+                    selected = oneObjectivePool.get(new Random().nextInt(oneObjectivePool.size())).cloneObjective();
+                } else {
+                    selected = new Objective("custom_one", customOneObjective.getName(), customOneObjective.getAmount(), true);
+                    objectiveDataMap.put("custom_one", customOneObjective);
+                }
             } else if (objType.equals("template") && fixedOneTemplateIndex != null
                     && fixedOneTemplateIndex >= 0 && fixedOneTemplateIndex < oneObjectivePool.size()) {
                 selected = oneObjectivePool.get(fixedOneTemplateIndex).cloneObjective();
@@ -95,22 +102,34 @@ public class ObjectiveManager {
             }
         } else {
             // ---- OWN OBJECTIVE mode ----
-            if (objType.equals("custom") && !customOwnObjectives.isEmpty()) {
-                // Filter out nulls
-                List<CustomObjectiveData> validCustoms = new ArrayList<>();
-                for (CustomObjectiveData c : customOwnObjectives) {
-                    if (c != null) validCustoms.add(c);
-                }
-                if (!validCustoms.isEmpty()) {
-                    // Assign from valid custom objectives one by one
-                    for (int i = 0; i < investigators.size(); i++) {
-                        CustomObjectiveData data = validCustoms.get(i % validCustoms.size());
+            if (objType.equals("custom")) {
+                List<Objective> shuffledPool = new ArrayList<>();
+                for (Objective o : ownObjectivePool) shuffledPool.add(o.cloneObjective());
+                Collections.shuffle(shuffledPool);
+                int randomPoolIndex = 0;
+
+                for (int i = 0; i < investigators.size(); i++) {
+                    CustomObjectiveData data = null;
+                    if (i < customOwnObjectives.size()) {
+                        data = customOwnObjectives.get(i);
+                    }
+                    
+                    List<Objective> list = new ArrayList<>();
+                    if (data != null && !data.getName().equals("-")) {
+                        // Custom objective provided for this slot
                         String id = "custom_own_" + investigators.get(i).getPlayerId();
                         objectiveDataMap.put(id, data);
-                        List<Objective> list = new ArrayList<>();
                         list.add(new Objective(id, data.getName(), data.getAmount(), false));
-                        playerObjectives.put(investigators.get(i).getPlayerId(), list);
+                    } else {
+                        // Fallback to random template
+                        if (randomPoolIndex < shuffledPool.size()) {
+                            list.add(shuffledPool.get(randomPoolIndex++));
+                        } else {
+                            // Pool exhausted, just use first one
+                            list.add(ownObjectivePool.get(0).cloneObjective());
+                        }
                     }
+                    playerObjectives.put(investigators.get(i).getPlayerId(), list);
                 }
             } else if (objType.equals("template") && !fixedOwnTemplateIndices.isEmpty()) {
                 // Diacak ke tiap investigator dari pilihan yang diset di dialog
@@ -129,16 +148,20 @@ public class ObjectiveManager {
                 }
             } else {
                 // random (default)
-                List<Objective> shuffledPool = new ArrayList<>();
-                for (Objective o : ownObjectivePool) shuffledPool.add(o.cloneObjective());
-                Collections.shuffle(shuffledPool);
-                for (int i = 0; i < investigators.size(); i++) {
-                    if (i >= shuffledPool.size()) break;
-                    List<Objective> list = new ArrayList<>();
-                    list.add(shuffledPool.get(i));
-                    playerObjectives.put(investigators.get(i).getPlayerId(), list);
-                }
+                assignRandomOwnObjectives(investigators);
             }
+        }
+    }
+
+    private void assignRandomOwnObjectives(List<PlayerData> investigators) {
+        List<Objective> shuffledPool = new ArrayList<>();
+        for (Objective o : ownObjectivePool) shuffledPool.add(o.cloneObjective());
+        Collections.shuffle(shuffledPool);
+        for (int i = 0; i < investigators.size(); i++) {
+            if (i >= shuffledPool.size()) break;
+            List<Objective> list = new ArrayList<>();
+            list.add(shuffledPool.get(i));
+            playerObjectives.put(investigators.get(i).getPlayerId(), list);
         }
     }
     
@@ -158,12 +181,17 @@ public class ObjectiveManager {
     public List<Objective> getOwnObjectivePool() { return ownObjectivePool; }
 
     public void setCustomOneObjective(CustomObjectiveData data) { this.customOneObjective = data; }
+    public CustomObjectiveData getCustomOneObjective() { return customOneObjective; }
     public void addCustomOwnObjective(CustomObjectiveData data) { this.customOwnObjectives.add(data); }
     public void setCustomOwnObjective(int index, CustomObjectiveData data) {
         while (this.customOwnObjectives.size() <= index) {
             this.customOwnObjectives.add(null);
         }
         this.customOwnObjectives.set(index, data);
+    }
+    public CustomObjectiveData getCustomOwnObjective(int index) {
+        if (index < 0 || index >= customOwnObjectives.size()) return null;
+        return customOwnObjectives.get(index);
     }
     public void clearCustomOwnObjectives() { this.customOwnObjectives.clear(); }
     public List<CustomObjectiveData> getCustomOwnObjectives() { return customOwnObjectives; }

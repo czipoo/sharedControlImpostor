@@ -73,6 +73,43 @@ public class GameListener implements Listener {
         }
     }
 
+    /**
+     * Keep eliminated spectators inside the meeting world border.
+     * Vanilla spectators ignore world border, so enforce it manually.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEliminatedSpectatorMove(PlayerMoveEvent event) {
+        if (event.getTo() == null) return;
+        if (event.getFrom().getBlockX() == event.getTo().getBlockX()
+                && event.getFrom().getBlockY() == event.getTo().getBlockY()
+                && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
+            return;
+        }
+
+        Player player = event.getPlayer();
+        if (player.getGameMode() != org.bukkit.GameMode.SPECTATOR) return;
+
+        PlayerData pd = gameManager.getPlayerData(player);
+        if (pd == null || !pd.isEliminated()) return;
+
+        org.bukkit.World meetingWorld = gameManager.getWorldManager().getMeetingWorld();
+        if (meetingWorld == null || !player.getWorld().equals(meetingWorld)) return;
+
+        org.bukkit.WorldBorder border = meetingWorld.getWorldBorder();
+        if (border.isInside(event.getTo())) return;
+
+        Location safe = event.getFrom().clone();
+        if (!border.isInside(safe)) {
+            Location center = border.getCenter();
+            safe = new Location(meetingWorld, center.getX(),
+                    meetingWorld.getHighestBlockYAt(center) + 1.0,
+                    center.getZ(),
+                    player.getLocation().getYaw(),
+                    player.getLocation().getPitch());
+        }
+        event.setTo(safe);
+    }
+
     @EventHandler(priority = EventPriority.HIGH)
     public void onPlayerInteract(PlayerInteractEvent event) {
         Player player = event.getPlayer();
@@ -309,8 +346,8 @@ public class GameListener implements Listener {
                 final String impostorNamesStr = impostorNames.toString();
                 final boolean isOneObj = settings.isOneObjectiveMode();
                 String chatMsg = isOneObj
-                        ? "Impostor Menang! Player mati sebelum menyelesaikan objektif!"
-                        : "Impostor Menang! Player mati sebelum menyelesaikan semua objektif!";
+                        ? "Player mati sebelum menyelesaikan objektif!"
+                        : "Player mati sebelum menyelesaikan semua objektif!";
                 String sep = "§8========================================";
 
                 // Show title to everyone, then end game
@@ -325,9 +362,16 @@ public class GameListener implements Listener {
                 }
                 Bukkit.broadcast(Component.text(sep));
                 Bukkit.broadcast(Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
-                Bukkit.broadcast(Component.text(impostorNamesStr + " adalah impostor").color(NamedTextColor.GRAY));
                 Bukkit.broadcast(Component.text(chatMsg).color(NamedTextColor.YELLOW));
                 Bukkit.broadcast(Component.text(sep));
+
+                // End immediately so turn/scoreboard resume cannot continue
+                gameManager.setGameState(GameState.FINISHED);
+                if (gameManager.getTurnManager() != null) gameManager.getTurnManager().stopTurn();
+                if (gameManager.getScoreboardManager() != null) {
+                    gameManager.getScoreboardManager().stopUpdates();
+                    gameManager.getScoreboardManager().removeScoreboards();
+                }
 
                 // Delay endGame so players can see the message
                 Bukkit.getScheduler().runTaskLater(plugin, gameManager::endGame, 100L);

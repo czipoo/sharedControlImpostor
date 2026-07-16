@@ -1,5 +1,5 @@
 name: sharedControlImpostor
-version: '${version}'
+version: '1.0'
 main: com.czipo.sharedControlImpostor.SharedControlImpostor
 api-version: '1.21.11'
 load: POSTWORLD

@@ -48,6 +48,8 @@ public class SettingsManager implements Listener {
     private final List<Integer> selectedOwnTemplateIndices = new ArrayList<>();
     private int currentOwnCustomIndex = 0;
     private String customObjectiveText = "";
+    /** When non-null, custom save targets this own-objective slot (0-based) via /editobjective */
+    private Integer editingObjectiveIndex = null;
 
     public SettingsManager(SharedControlImpostor plugin, GameManager gameManager) {
         this.plugin = plugin;
@@ -298,6 +300,7 @@ public class SettingsManager implements Listener {
 
     /** Main entry – opens the correct page based on current state */
     public void openObjectiveDialog(Player player) {
+        editingObjectiveIndex = null;
         if (oneObjectiveMode && objectiveType.equals("random"))       openObjectivePage1(player);
         else if (!oneObjectiveMode && objectiveType.equals("random")) openObjectivePage2(player);
         else if (oneObjectiveMode && objectiveType.equals("template")) openObjectivePage3(player);
@@ -436,7 +439,7 @@ public class SettingsManager implements Listener {
             + "{\"type\":\"minecraft:text\",\"key\":\"name\",\"label\":\"Nama Objektif\",\"placeholder\":\"Contoh: Mining Diamond\"},"
             + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}],\"default\":0},"
             + "{\"type\":\"minecraft:text\",\"key\":\"target\",\"label\":\"Target (contoh: diamond_ore)\"},"
-            + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
+            + "{\"type\":\"minecraft:text\",\"key\":\"amount\",\"label\":\"Jumlah\",\"placeholder\":\"1\"}"
             + "],"
             + "\"can_close_with_escape\":false,"
             + "\"exit_action\":{\"label\":\"Simpan\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
@@ -456,7 +459,7 @@ public class SettingsManager implements Listener {
             + "{\"type\":\"minecraft:text\",\"key\":\"name\",\"label\":\"Nama Objektif\"},"
             + "{\"type\":\"minecraft:single_option\",\"key\":\"action\",\"label\":\"Aksi\",\"options\":[{\"id\":\"mining\",\"display\":\"Mining Block\"},{\"id\":\"pickup\",\"display\":\"Dapatkan Item\"},{\"id\":\"kill\",\"display\":\"Bunuh Mob\"}]},"
             + "{\"type\":\"minecraft:text\",\"key\":\"target\",\"label\":\"Target (contoh: diamond_ore)\"},"
-            + "{\"type\":\"minecraft:number_range\",\"key\":\"amount\",\"label\":\"Jumlah\",\"start\":1,\"end\":999,\"step\":1,\"initial\":1}"
+            + "{\"type\":\"minecraft:text\",\"key\":\"amount\",\"label\":\"Jumlah\",\"placeholder\":\"1\"}"
             + "],"
             + "\"can_close_with_escape\":false,"
             + "\"exit_action\":{\"label\":\"Simpan\",\"tooltip\":\"NOTE : Untuk set custom di mode own objective tambahkan objektifnya satu per satu\",\"width\":300,\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_save_custom\"}},"
@@ -465,6 +468,58 @@ public class SettingsManager implements Listener {
             + "{\"label\":\"Set Custom\",\"tooltip\":\"Buat objektifmu sendiri\",\"action\":{\"type\":\"dynamic/custom\",\"id\":\"sci:obj_toggle_type\"}}"
             + "]}";
         showDialog(player, json);
+    }
+
+    /**
+     * Open own-objective custom dialog for editing a specific slot via /editobjective.
+     */
+    public void openEditOwnCustomObjective(Player player, int zeroBasedIndex) {
+        editingObjectiveIndex = zeroBasedIndex;
+        oneObjectiveMode = false;
+        objectiveType = "custom";
+        // Do not call openObjectiveDialog (it clears editingObjectiveIndex)
+        openObjectivePage6(player);
+    }
+
+    public static String getActionDisplayName(String action) {
+        return switch (action) {
+            case "pickup" -> "Dapatkan Item";
+            case "kill" -> "Bunuh Mob";
+            default -> "Mining Block";
+        };
+    }
+
+    /**
+     * Send a color-formatted custom objective summary.
+     * @param header e.g. "Objective custom 1 disimpan:" or "Objective:" or "Objective 2 disimpan:"
+     */
+    public void sendCustomObjectiveMessage(org.bukkit.command.CommandSender sender, String header, CustomObjectiveData data) {
+        String name = data != null ? data.getName() : "-";
+        String action = data != null ? getActionDisplayName(data.getAction()) : "-";
+        String target = data != null ? data.getTarget() : "-";
+        String amount = data != null ? String.valueOf(data.getAmount()) : "-";
+
+        sender.sendMessage(Component.text(header).color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD));
+        sender.sendMessage(Component.text("Nama: ").color(NamedTextColor.YELLOW)
+                .append(Component.text(name).color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Aksi: ").color(NamedTextColor.YELLOW)
+                .append(Component.text(action).color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Target: ").color(NamedTextColor.YELLOW)
+                .append(Component.text(target).color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Jumlah: ").color(NamedTextColor.YELLOW)
+                .append(Component.text(amount).color(NamedTextColor.WHITE)));
+    }
+
+    public void sendCustomObjectivePlaceholder(org.bukkit.command.CommandSender sender, int number) {
+        sender.sendMessage(Component.text("Objective " + number + ":").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD));
+        sender.sendMessage(Component.text("Nama: ").color(NamedTextColor.YELLOW)
+                .append(Component.text("-").color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Aksi: ").color(NamedTextColor.YELLOW)
+                .append(Component.text("-").color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Target: ").color(NamedTextColor.YELLOW)
+                .append(Component.text("-").color(NamedTextColor.WHITE)));
+        sender.sendMessage(Component.text("Jumlah: ").color(NamedTextColor.YELLOW)
+                .append(Component.text("-").color(NamedTextColor.WHITE)));
     }
 
     // ===== END OBJECTIVE DIALOG PAGES =====
@@ -574,10 +629,12 @@ public class SettingsManager implements Listener {
 
         switch (idStr) {
             case "sci:obj_toggle_mode" -> {
+                editingObjectiveIndex = null;
                 oneObjectiveMode = !oneObjectiveMode;
                 Bukkit.getScheduler().runTask(plugin, () -> openObjectiveDialog(player));
             }
             case "sci:obj_toggle_type" -> {
+                editingObjectiveIndex = null;
                 // Cycle random -> template -> custom -> random
                 switch (objectiveType) {
                     case "random" -> objectiveType = "template";
@@ -605,52 +662,109 @@ public class SettingsManager implements Listener {
                 }
             }
             case "sci:obj_save_custom" -> {
-                if (view != null) {
-                    String name = "";
-                    try { name = view.getText("name"); } catch (Exception ignored) {}
-                    String action = "mining";
-                    try { 
-                        float actionIdx = view.getFloat("action");
-                        if (actionIdx == 1.0f) action = "pickup";
-                        else if (actionIdx == 2.0f) action = "kill";
-                    } catch (Exception ignored) {}
-                    String target = "";
-                    try { target = view.getText("target"); } catch (Exception ignored) {}
-                    int amount = 1;
-                    try { amount = view.getFloat("amount").intValue(); } catch (Exception ignored) {}
-                    
-                    if (name.isEmpty() || target.isEmpty()) {
-                        player.sendMessage(Component.text("Nama dan Target tidak boleh kosong!").color(NamedTextColor.RED));
+                if (view == null) return;
+                String name = "";
+                try { name = view.getText("name"); } catch (Exception ignored) {}
+                if (name == null) name = "";
+
+                String action = parseActionFromView(view);
+
+                String target = "";
+                try { target = view.getText("target"); } catch (Exception ignored) {}
+                if (target == null) target = "";
+
+                String amountStr = "";
+                try { amountStr = view.getText("amount"); } catch (Exception ignored) {}
+                if (amountStr == null) amountStr = "";
+
+                if (name.isBlank() || target.isBlank() || amountStr.isBlank()) {
+                    player.sendMessage(Component.text("Nama, Target dan Jumlah tidak boleh kosong!").color(NamedTextColor.RED));
+                    return;
+                }
+
+                int amount;
+                try {
+                    amount = Integer.parseInt(amountStr.trim());
+                } catch (NumberFormatException e) {
+                    player.sendMessage(Component.text("Jumlah harus berupa angka").color(NamedTextColor.RED));
+                    return;
+                }
+                if (amount < 1) {
+                    player.sendMessage(Component.text("Jumlah harus berupa angka").color(NamedTextColor.RED));
+                    return;
+                }
+
+                TargetListManager targetList = plugin.getTargetListManager();
+                if (targetList != null) {
+                    String targetError = targetList.validateTarget(action, target);
+                    if (targetError != null) {
+                        player.sendMessage(Component.text(targetError).color(NamedTextColor.RED));
                         return;
                     }
-                    
-                    CustomObjectiveData data = new CustomObjectiveData(name, action, target, amount);
-                    if (oneObjectiveMode) {
-                        gameManager.getObjectiveManager().setCustomOneObjective(data);
-                        player.sendMessage(Component.text("Objective custom disimpan: §e" + name).color(NamedTextColor.GREEN));
-                    } else {
-                        int playerCount = gameManager.getRegisteredPlayerCount();
-                        if (playerCount == 0) playerCount = Math.max(3, Bukkit.getOnlinePlayers().size());
-                        int investigatorCount = Math.max(1, playerCount - gameManager.getImpostorCount());
-                        
-                        int displayIndex = currentOwnCustomIndex + 1;
-                        gameManager.getObjectiveManager().setCustomOwnObjective(currentOwnCustomIndex, data);
-                        
-                        String msg = "Objective custom " + displayIndex + " disimpan:\n"
-                                   + "Nama: " + name + "\n"
-                                   + "Aksi: " + (action.equals("mining") ? "Mining" : (action.equals("pickup") ? "Dapatkan Item" : "Bunuh Mob")) + "\n"
-                                   + "Target: " + target + "\n"
-                                   + "Jumlah: " + amount;
-                        player.sendMessage(Component.text(msg).color(NamedTextColor.GREEN));
-                        
-                        currentOwnCustomIndex++;
-                        if (currentOwnCustomIndex >= investigatorCount) {
-                            currentOwnCustomIndex = 0;
-                        }
+                }
+
+                String normalizedTarget = TargetListManager.normalize(target);
+                CustomObjectiveData data = new CustomObjectiveData(name.trim(), action, normalizedTarget, amount);
+
+                if (editingObjectiveIndex != null) {
+                    int editIndex = editingObjectiveIndex;
+                    editingObjectiveIndex = null;
+                    gameManager.getObjectiveManager().setCustomOwnObjective(editIndex, data);
+                    sendCustomObjectiveMessage(player, "Objective " + (editIndex + 1) + " disimpan:", data);
+                    player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
+                    return;
+                }
+
+                if (oneObjectiveMode) {
+                    gameManager.getObjectiveManager().setCustomOneObjective(data);
+                    sendCustomObjectiveMessage(player, "Objective custom disimpan:", data);
+                } else {
+                    int playerCount = gameManager.getRegisteredPlayerCount();
+                    if (playerCount == 0) playerCount = Math.max(3, Bukkit.getOnlinePlayers().size());
+                    int investigatorCount = Math.max(1, playerCount - gameManager.getImpostorCount());
+
+                    int displayIndex = currentOwnCustomIndex + 1;
+                    gameManager.getObjectiveManager().setCustomOwnObjective(currentOwnCustomIndex, data);
+                    sendCustomObjectiveMessage(player, "Objective custom " + displayIndex + " disimpan:", data);
+
+                    currentOwnCustomIndex++;
+                    if (currentOwnCustomIndex >= investigatorCount) {
+                        currentOwnCustomIndex = 0;
                     }
                 }
                 player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.2f);
             }
         }
+    }
+
+    private String parseActionFromView(DialogResponseView view) {
+        // Prefer option id text (single_option)
+        try {
+            String actionText = view.getText("action");
+            if (actionText != null && !actionText.isBlank()) {
+                String t = actionText.trim().toLowerCase();
+                if (t.equals("mining") || t.equals("pickup") || t.equals("kill")) {
+                    return t;
+                }
+                // Some dialog implementations may return display index as text
+                if (t.equals("0") || t.equals("1") || t.equals("2")) {
+                    return switch (t) {
+                        case "1" -> "pickup";
+                        case "2" -> "kill";
+                        default -> "mining";
+                    };
+                }
+            }
+        } catch (Exception ignored) {}
+
+        try {
+            Float actionIdx = view.getFloat("action");
+            if (actionIdx != null) {
+                if (actionIdx == 1.0f) return "pickup";
+                if (actionIdx == 2.0f) return "kill";
+            }
+        } catch (Exception ignored) {}
+
+        return "mining";
     }
 }

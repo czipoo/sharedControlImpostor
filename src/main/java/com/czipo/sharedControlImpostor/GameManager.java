@@ -417,7 +417,7 @@ public class GameManager {
         if (scoreboardManager != null) scoreboardManager.stopUpdates();
         if (voteManager != null) voteManager.cleanup();
 
-        // Create persistent state before ending
+        // Create persistent state before ending (only when still mid-play, not after win finish)
         if (gameState == GameState.PLAYING && currentActivePlayerId != null) {
             Player active = Bukkit.getPlayer(currentActivePlayerId);
             if (active != null) {
@@ -470,8 +470,11 @@ public class GameManager {
         }
     }
 
-    public void checkWinConditions() {
-        if (!isPlaying()) return;
+    /**
+     * @return true if the game has ended due to a win condition
+     */
+    public boolean checkWinConditions() {
+        if (!isPlaying()) return false;
         String sep = "§8========================================";
 
         // Count active investigators and active impostors
@@ -486,53 +489,127 @@ public class GameManager {
 
         // Impostors win if no investigators left, or investigators <= impostors
         if (activeInvestigators == 0 || activeInvestigators <= activeImpostors) {
-            // Impostors win
-            // Find impostor names for display
-            StringBuilder impostorNames = new StringBuilder();
+            List<String> impostorNames = new ArrayList<>();
             for (PlayerData pd : playerDataMap.values()) {
                 if (pd.isImpostor()) {
-                    if (impostorNames.length() > 0) impostorNames.append(", ");
-                    impostorNames.append(pd.getPlayerName());
+                    impostorNames.add(pd.getPlayerName());
                 }
             }
+
+            String impostorText;
+            if (impostorNames.size() == 1) {
+                impostorText = impostorNames.get(0) + " adalah impostor!";
+            } else if (impostorNames.size() == 2) {
+                impostorText = impostorNames.get(0) + " dan " + impostorNames.get(1) + " adalah impostor!";
+            } else {
+                String last = impostorNames.get(impostorNames.size() - 1);
+                String middle = String.join(", ", impostorNames.subList(0, impostorNames.size() - 1));
+                impostorText = middle + " dan " + last + " adalah impostor!";
+            }
+
             Bukkit.broadcast(Component.text(sep));
-            Bukkit.broadcast(Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
-            Bukkit.broadcast(Component.text(impostorNames.toString() + " adalah impostor").color(NamedTextColor.GRAY));
-            Bukkit.broadcast(Component.text(sep));
-            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_DEATH, 1f, 1f);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
-            return;
+                Bukkit.broadcast(Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
+                Bukkit.broadcast(Component.text("Hanya tersisa satu Investigator!").color(NamedTextColor.YELLOW));
+                Bukkit.broadcast(Component.text(sep));
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_ENDER_DRAGON_DEATH, 1f, 1f);
+                p.showTitle(net.kyori.adventure.title.Title.title(
+                        Component.text("IMPOSTOR MENANG!").color(NamedTextColor.RED).decorate(TextDecoration.BOLD),
+                        Component.text(impostorText).color(NamedTextColor.GRAY)
+                ));
+            }
+            finishGameSoon();
+            return true;
         }
 
         // Check if objective is completed
         if (objectiveManager != null && objectiveManager.areAllObjectivesCompleted()) {
-            // Investigators win
+            List<String> impostorNames = new ArrayList<>();
+            for (PlayerData pd : playerDataMap.values()) {
+                if (pd.isImpostor()) {
+                    impostorNames.add(pd.getPlayerName());
+                }
+            }
+
+            String impostorText;
+            if (impostorNames.size() == 1) {
+                impostorText = impostorNames.get(0) + " adalah impostor!";
+            } else if (impostorNames.size() == 2) {
+                impostorText = impostorNames.get(0) + " dan " + impostorNames.get(1) + " adalah impostor!";
+            } else {
+                String last = impostorNames.get(impostorNames.size() - 1);
+                String middle = String.join(", ", impostorNames.subList(0, impostorNames.size() - 1));
+                impostorText = middle + " dan " + last + " adalah impostor!";
+            }
+
             Bukkit.broadcast(Component.text(sep));
-            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD));
-            Bukkit.broadcast(Component.text("Objektif berhasil diselesaikan!").color(NamedTextColor.GRAY));
+            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD));
+            Bukkit.broadcast(Component.text("Semua Objective berhasil diselesaikan!").color(NamedTextColor.YELLOW));
             Bukkit.broadcast(Component.text(sep));
-            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
-            return;
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+                p.showTitle(net.kyori.adventure.title.Title.title(
+                        Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
+                        Component.text(impostorText).color(NamedTextColor.GRAY)
+                ));
+            }
+            finishGameSoon();
+            return true;
         }
 
         // Check if all impostors are eliminated
         boolean impostorsAlive = false;
+        List<String> eliminatedImpostors = new ArrayList<>();
         for (PlayerData pd : playerDataMap.values()) {
             if (pd.isActive() && pd.isImpostor()) {
                 impostorsAlive = true;
-                break;
+            } else if (!pd.isActive() && pd.isImpostor()) {
+                eliminatedImpostors.add(pd.getPlayerName());
             }
         }
 
         if (!impostorsAlive) {
+            String impostorText;
+            if (eliminatedImpostors.size() == 1) {
+                impostorText = eliminatedImpostors.get(0) + " adalah impostor!";
+            } else if (eliminatedImpostors.size() == 2) {
+                impostorText = eliminatedImpostors.get(0) + " dan " + eliminatedImpostors.get(1) + " adalah impostor!";
+            } else {
+                String last = eliminatedImpostors.get(eliminatedImpostors.size() - 1);
+                String middle = String.join(", ", eliminatedImpostors.subList(0, eliminatedImpostors.size() - 1));
+                impostorText = middle + " dan " + last + " adalah impostor!";
+            }
+
             Bukkit.broadcast(Component.text(sep));
-            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.AQUA).decorate(TextDecoration.BOLD));
-            Bukkit.broadcast(Component.text("Semua impostor telah tereliminasi!").color(NamedTextColor.GRAY));
+            Bukkit.broadcast(Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD));
+            Bukkit.broadcast(Component.text("Semua Impostor telah tereliminasi!").color(NamedTextColor.YELLOW));
             Bukkit.broadcast(Component.text(sep));
-            for (Player p : Bukkit.getOnlinePlayers()) p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
-            Bukkit.getScheduler().runTaskLater(plugin, () -> endGame(), 2L);
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                p.playSound(p.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+                p.showTitle(net.kyori.adventure.title.Title.title(
+                        Component.text("INVESTIGATOR MENANG!").color(NamedTextColor.GREEN).decorate(TextDecoration.BOLD),
+                        Component.text(impostorText).color(NamedTextColor.GRAY)
+                ));
+            }
+            finishGameSoon();
+            return true;
         }
+        return false;
+    }
+
+    /**
+     * Mark game as finished immediately so no further gameplay resume can happen,
+     * then run full endGame cleanup shortly after so players can read the win message.
+     */
+    private void finishGameSoon() {
+        gameState = GameState.FINISHED;
+        if (turnManager != null) turnManager.stopTurn();
+        if (scoreboardManager != null) {
+            scoreboardManager.stopUpdates();
+            scoreboardManager.removeScoreboards();
+        }
+        if (voteManager != null) voteManager.cleanup();
+        Bukkit.getScheduler().runTaskLater(plugin, this::endGame, 40L);
     }
 
 
@@ -622,9 +699,9 @@ public class GameManager {
         gameState = GameState.PLAYING;
 
         // Check win condition AFTER setting state
-        checkWinConditions();
+        if (checkWinConditions()) return;
         // If game ended due to win, stop here
-        if (!isPlaying()) return;
+        if (!isPlaying() || isFinished()) return;
 
         // If there was an eliminated player, keep them in meeting world as spectator
         if (eliminatedPlayerId != null) {

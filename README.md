@@ -26,7 +26,7 @@ Plugin Minecraft mini-game dimana semua pemain bermain **bergantian** mengontrol
 ## Alur Permainan
 
 1. **Registrasi pemain** dengan `/regis [player]` atau `/regisall`
-2. **Konfigurasi** settings melalui item **Settings** di inventory — hanya untuk OP
+2. **Konfigurasi** settings melalui item **Settings** di inventory
 3. **Mulai game** dengan `/start`
 4. Pemain bermain **bergantian** di survival world
 5. Saat giliran habis, karakter berpindah ke pemain berikutnya beserta seluruh **state** (inventory, health, posisi, dll.)
@@ -43,11 +43,13 @@ Plugin Minecraft mini-game dimana semua pemain bermain **bergantian** mengontrol
 | `/regis [player]` | Daftarkan pemain ke game | OP |
 | `/regisall` | Daftarkan semua pemain online | OP |
 | `/unregis [player]` | Hapus pemain dari daftar | OP |
+| `/listplayer` | Lihat daftar pemain terdaftar | Semua pemain |
 | `/start` | Mulai game | OP |
 | `/endgame` | Akhiri game dan kembali ke lobby | OP |
 | `/meeting` | Panggil meeting (voting) | Semua pemain |
 | `/skip` | Lewati giliran aktif saat ini | OP |
-| `/listplayer` | Lihat daftar pemain terdaftar | Semua pemain |
+| `/listobjective` | Lihat daftar objective custom | OP |
+| `/editobjective <nomor>` | Edit custom objective pada mode own objective | OP |
 | `/commandinfo` | Lihat info daftar command  | OP |
 
 ---
@@ -60,7 +62,7 @@ Klik kanan item **Settings** untuk membuka menu konfigurasi.
 |------|------|--------|
 | 1 | Totem | Toggle **One Life** mode (mati = impostor menang) |
 | 2 | Grass/Dirt Block | Toggle **Buat world baru** / **Lanjutkan world sebelumnya** |
-| 3 | Book | Konfigurasi **Objective** (mode, type, template, custom) |
+| 3 | Book | Konfigurasi **Objective** (mode (one dan own), type (random, template, custom)) |
 | 4 | Player Head | Konfigurasi **jumlah impostor** |
 | 5 | Clock | Konfigurasi **Timer** (swap, voting, cooldown meeting) |
 
@@ -73,6 +75,8 @@ Semua investigator berbagi 1 objektif yang sama.
 
 ### Own Objective
 Setiap investigator mendapat objektif masing-masing. Jika seorang investigator dieliminasi, objektifnya menjadi objektif bersama yang bisa diselesaikan siapa saja.
+
+NOTE : Hanya bisa melakukan objective yang ada pada scoreboard masing-masing, tidak bisa melakukan objective orang lain yang masih hidup.
 
 ---
 
@@ -89,16 +93,16 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 - Dapat 10 Arrow → Aksi: `Dapatkan Item`, Target: `arrow`, Jumlah: `10`
 - Bunuh 3 Creeper → Aksi: `Bunuh Mob`, Target: `creeper`, Jumlah: `3`
 
-> **Catatan**: Target ID menggunakan nama material/entity Minecraft (lowercase). Contoh: `diamond_ore`, `warden`, `iron_sword`.
+> **Catatan**: Target menggunakan nama material/entity Minecraft (lowercase). Contoh: `diamond_ore`, `warden`, `iron_sword`.
 
 ---
 
 ## Objektif Template (One Objective)
 
-| No | Deskripsi |
+| No | Objective |
 |----|-----------|
-| 1 | Masuk ke dimensi nether |
-| 2 | Dapatkan ender pearl dari piglin |
+| 1 | Masuk ke dimensi Nether |
+| 2 | Dapatkan Ender Pearl dari Piglin |
 | 3 | Dapatkan 1 Ghast Tear |
 | 4 | Dapatkan 1 Ancient Debris |
 | 5 | Dapatkan 1 Wither Skeleton Skull |
@@ -107,14 +111,15 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 | 8 | Bunuh diri dengan Warden |
 | 9 | Kalahkan Ender Dragon |
 | 10 | Dapatkan Elytra |
+| 11 | Jelajahi 10 biome berbeda |
 
 ## Objektif Template (Own Objective)
 
-| No | Deskripsi |
+| No | Objective |
 |----|-----------|
-| 1 | Trade dengan Villager |
+| 1 | Kumpulkan 32 Iron Ingot |
 | 2 | Gunakan Enchanting Table |
-| 3 | Tame Cat |
+| 3 | Tame Kucing atau Serigala |
 | 4 | Dapatkan Bucket of Axolotl |
 | 5 | Pukul Iron Golem |
 | 6 | Tunggangi Horse sejauh 100 block |
@@ -130,9 +135,11 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 | 16 | Berlari sejauh 500 block |
 | 17 | Pakai full set Iron Armor |
 | 18 | Dapatkan honey bottle |
-| 19 | Pergi ke 5 biome berbeda |
-| 20 | Nyalakan 5 TNT |
-| 21 | Masuk ke Nether |
+| 19 | Craft Diamond Pickaxe |
+| 20 | Bunuh 10 Zombie |
+| 21 | Nyalakan 5 TNT |
+| 22 | Masuk ke dimensi Nether |
+
 
 ---
 
@@ -141,6 +148,7 @@ Setiap investigator mendapat objektif masing-masing. Jika seorang investigator d
 - Saat `/start` dengan **Buat world baru** dipilih: survival world baru dibuat dan world lama dihapus
 - Saat `/start` dengan **Lanjutkan world sebelumnya**: world survival terakhir dimuat kembali beserta posisi dan inventory pemain aktif terakhir
 - `keepInventory` **true** secara default
+- Spawpoint di **bed** berlaku untuk semua player
 
 ---
 

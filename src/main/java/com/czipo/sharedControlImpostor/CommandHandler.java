@@ -13,6 +13,7 @@ import org.bukkit.Bukkit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -59,6 +60,10 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 return handleCommandInfo(sender);
             case "skip":
                 return handleSkip(sender);
+            case "listobjective":
+                return handleListObjective(sender);
+            case "editobjective":
+                return handleEditObjective(sender, args);
 
             default:
                 sender.sendMessage(Component.text("Command tidak tersedia.").color(NamedTextColor.RED));
@@ -249,16 +254,32 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
 
     // ===== /commandinfo =====
     private boolean handleCommandInfo(CommandSender sender) {
-        sender.sendMessage(Component.text("   DAFTAR COMMAND   ").color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD));
-        sender.sendMessage(Component.text("/regis <nama> ").color(NamedTextColor.GREEN).append(Component.text("- Daftarkan player ke permainan").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/regisall ").color(NamedTextColor.GREEN).append(Component.text("- Daftarkan semua player online").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/unregis <nama> ").color(NamedTextColor.GREEN).append(Component.text("- Hapus player dari daftar").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/listplayer ").color(NamedTextColor.GREEN).append(Component.text("- Lihat daftar pemain terdaftar").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/start ").color(NamedTextColor.GREEN).append(Component.text("- Mulai permainan").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/meeting ").color(NamedTextColor.GREEN).append(Component.text("- Memanggil meeting untuk meneliminasi player").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/skip ").color(NamedTextColor.GREEN).append(Component.text("- Lewati giliranmu").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/endgame ").color(NamedTextColor.GREEN).append(Component.text("- Mengakhiri permainan").color(NamedTextColor.GRAY)));
-        sender.sendMessage(Component.text("/commandinfo ").color(NamedTextColor.GREEN).append(Component.text("- Lah ini").color(NamedTextColor.GRAY)));
+        boolean isOp = sender.isOp();
+
+        sender.sendMessage(Component.text("════ DAFTAR COMMAND ════").color(NamedTextColor.GOLD).decorate(TextDecoration.BOLD));
+        sender.sendMessage(Component.text("/listplayer ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Lihat daftar pemain terdaftar").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/regis [nama] ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Daftarkan player ke permainan").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/regisall ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Daftarkan semua player online sekaligus").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/unregis [nama] ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Hapus player dari daftar").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/start ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Mulai permainan (min. 3 player terdaftar)").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/meeting ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Panggil emergency meeting. 1 orang 1x, sampai semua orang yang tersisa sudah /meeting baru bisa /meeting lagi").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/skip ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Skip giliran player yang sedang aktif").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/endgame ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Akhiri permainan dan kembali ke lobby").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/listobjective ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Lihat daftar objective custom yang sudah diset").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/editobjective <nomor> ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Edit custom objective pada mode own objective (1, 2, 3, ...)").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/commandinfo ").color(NamedTextColor.GREEN)
+                .append(Component.text("- Tampilkan daftar command ini").color(NamedTextColor.GRAY)));
+
         return true;
     }
 
@@ -282,7 +303,102 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             player.sendMessage(Component.text("Tidak bisa skip giliran saat di world meeting!").color(NamedTextColor.RED));
             return true;
         }
+        
+        UUID activePlayerId = gameManager.getCurrentActivePlayerId();
+        if (activePlayerId != null) {
+            PlayerData activePd = gameManager.getPlayerData(activePlayerId);
+            if (activePd != null) {
+                
+            }
+        }
+        
         gameManager.getTurnManager().skipCurrentTurn();
+        return true;
+    }
+
+    // ===== /listobjective =====
+    private boolean handleListObjective(CommandSender sender) {
+        if (!sender.isOp()) {
+            sender.sendMessage(Component.text("Hanya OP yang bisa menggunakan command ini!").color(NamedTextColor.RED));
+            return true;
+        }
+
+        SettingsManager settings = gameManager.getSettingsManager();
+        if (settings == null || !"custom".equals(settings.getObjectiveType())) {
+            sender.sendMessage(Component.text("Command ini hanya bisa digunakan jika tipe objective adalah Set Custom!").color(NamedTextColor.RED));
+            return true;
+        }
+
+        int playerCount = gameManager.getRegisteredPlayerCount();
+        if (playerCount < 3) {
+            sender.sendMessage(Component.text("Jumlah player minimal 3!").color(NamedTextColor.RED));
+            return true;
+        }
+
+        ObjectiveManager om = gameManager.getObjectiveManager();
+        if (settings.isOneObjectiveMode()) {
+            CustomObjectiveData data = om.getCustomOneObjective();
+            settings.sendCustomObjectiveMessage(sender, "Objective:", data);
+            return true;
+        }
+
+        int investigatorCount = Math.max(1, playerCount - gameManager.getImpostorCount());
+        for (int i = 0; i < investigatorCount; i++) {
+            CustomObjectiveData data = om.getCustomOwnObjective(i);
+            if (data != null) {
+                settings.sendCustomObjectiveMessage(sender, "Objective " + (i + 1) + ":", data);
+            } else {
+                settings.sendCustomObjectivePlaceholder(sender, i + 1);
+            }
+            if (i < investigatorCount - 1) {
+                sender.sendMessage(Component.empty());
+            }
+        }
+        return true;
+    }
+
+    // ===== /editobjective =====
+    private boolean handleEditObjective(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Component.text("Hanya player yang bisa menggunakan command ini.").color(NamedTextColor.RED));
+            return true;
+        }
+        if (!player.isOp()) {
+            player.sendMessage(Component.text("Hanya OP yang bisa menggunakan command ini!").color(NamedTextColor.RED));
+            return true;
+        }
+
+        SettingsManager settings = gameManager.getSettingsManager();
+        if (settings == null
+                || settings.isOneObjectiveMode()
+                || !"custom".equals(settings.getObjectiveType())) {
+            player.sendMessage(Component.text("Command ini hanya bisa digunakan pada mode Own Objective dengan Set Custom!").color(NamedTextColor.RED));
+            return true;
+        }
+
+        if (args.length < 1) {
+            player.sendMessage(Component.text("Penggunaan: /editobjective <angka>").color(NamedTextColor.RED));
+            return true;
+        }
+
+        int number;
+        try {
+            number = Integer.parseInt(args[0]);
+        } catch (NumberFormatException e) {
+            player.sendMessage(Component.text("Penggunaan: /editobjective <angka>").color(NamedTextColor.RED));
+            return true;
+        }
+
+        int playerCount = gameManager.getRegisteredPlayerCount();
+        if (playerCount == 0) playerCount = Math.max(0, Bukkit.getOnlinePlayers().size());
+        int investigatorCount = Math.max(0, playerCount - gameManager.getImpostorCount());
+
+        if (number < 1 || number > investigatorCount) {
+            player.sendMessage(Component.text("Objektif tidak ada").color(NamedTextColor.RED));
+            return true;
+        }
+
+        settings.openEditOwnCustomObjective(player, number - 1);
         return true;
     }
 
@@ -304,6 +420,15 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
                 }
                 break;
 
+            case "editobjective":
+                if (args.length == 1) {
+                    int playerCount = gameManager.getRegisteredPlayerCount();
+                    int investigatorCount = Math.max(0, playerCount - gameManager.getImpostorCount());
+                    for (int i = 1; i <= investigatorCount; i++) {
+                        completions.add(String.valueOf(i));
+                    }
+                }
+                break;
 
             case "meeting":
             case "start":
@@ -311,6 +436,7 @@ public class CommandHandler implements CommandExecutor, TabCompleter {
             case "listplayer":
             case "regisall":
             case "commandinfo":
+            case "listobjective":
                 // No arguments needed
                 break;
         }

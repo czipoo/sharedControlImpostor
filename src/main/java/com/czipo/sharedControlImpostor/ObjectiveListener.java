@@ -1,6 +1,7 @@
 package com.czipo.sharedControlImpostor;
 
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.*;
@@ -35,6 +36,11 @@ public class ObjectiveListener implements Listener {
     private final Map<UUID, Float> lastFallDistance = new HashMap<>();
     // For sprint tracking
     private final Map<UUID, Double> sprintDistance = new HashMap<>();
+
+    /** Item entity UUIDs that should not count for "dapatkan item" (player drops / block drops) */
+    private final Set<UUID> ignoredPickupItems = new HashSet<>();
+    /** Items a player put into containers — taking them back should not count */
+    private final Map<UUID, Map<Material, Integer>> depositedItems = new HashMap<>();
 
     public ObjectiveListener(SharedControlImpostor plugin, GameManager gameManager) {
         this.plugin = plugin;
@@ -148,7 +154,7 @@ public class ObjectiveListener implements Listener {
     public void onEntityDeath(EntityDeathEvent event) {
         Player killer = event.getEntity().getKiller();
         if (killer == null) return;
-        
+
         EntityType type = event.getEntityType();
         if (type == EntityType.GHAST) {
             for (ItemStack drop : event.getDrops()) {
@@ -171,6 +177,7 @@ public class ObjectiveListener implements Listener {
         } else if (type == EntityType.ENDER_DRAGON) {
             setCompleted(killer, "one_ender_dragon");
         } else if (type == EntityType.ZOMBIE) {
+            addProgress(killer, "own_kill_10_zombie", 1);
             // Check for chicken jockey
             if (event.getEntity().getVehicle() != null && event.getEntity().getVehicle().getType() == EntityType.CHICKEN) {
                 if (event.getEntity() instanceof Zombie zombie && zombie.isBaby()) {
@@ -192,20 +199,66 @@ public class ObjectiveListener implements Listener {
                 }
             }
         }
-        
+
         // Custom Objective (Kill)
         if (killer != null) {
             List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(killer.getUniqueId());
             if (objs != null) {
+                String entityName = TargetListManager.normalize(type.name());
                 for (Objective obj : objs) {
                     if (obj.getId().startsWith("custom_")) {
                         CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
-                        if (data != null && data.getAction().equals("kill") && type.name().equalsIgnoreCase(data.getTarget())) {
-                            addProgress(killer, obj.getId(), 1);
+                        if (data != null && data.getAction().equals("kill")) {
+                            String dataTarget = TargetListManager.normalize(data.getTarget());
+                            if (entityName.equals(dataTarget)) {
+                                addProgress(killer, obj.getId(), 1);
+                            } else {
+                                // defensive: try comparing without underscores (e.g., arrow vs tipped_arrow)
+                                if (entityName.endsWith("_" + dataTarget) || dataTarget.endsWith("_" + entityName)) {
+                                    addProgress(killer, obj.getId(), 1);
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    @EventHandler
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        Player deadPlayer = event.getEntity();
+        
+        // Handle warden death objective
+        if (deadPlayer.getLastDamageCause() instanceof org.bukkit.event.entity.EntityDamageByEntityEvent damageEvent) {
+            if (damageEvent.getDamager() instanceof Warden || damageEvent.getDamager().getType() == EntityType.WARDEN) {
+                setCompleted(deadPlayer, "one_warden_death");
+                setCompleted(deadPlayer, "own_warden_death");
+            }
+        }
+
+        // If the dead player was the active player, spectators need to be retargeted
+        if (gameManager.isPlaying() && deadPlayer.getUniqueId().equals(gameManager.getCurrentActivePlayerId())) {
+            // Force re-target all spectators to the dead player's location temporarily
+            // The turn manager will handle switching to the next player
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                Player newActive = gameManager.getCurrentActivePlayer();
+                if (newActive != null && !newActive.getUniqueId().equals(deadPlayer.getUniqueId())) {
+                    // Retarget all spectators to the new active player
+                    for (PlayerData pd : gameManager.getActivePlayers()) {
+                        if (pd.getPlayerId().equals(newActive.getUniqueId())) continue;
+                        Player spectator = Bukkit.getPlayer(pd.getPlayerId());
+                        if (spectator != null && spectator.getGameMode() == GameMode.SPECTATOR) {
+                            spectator.teleport(newActive.getLocation());
+                            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                                if (spectator.isOnline() && newActive.isOnline()) {
+                                    spectator.setSpectatorTarget(newActive);
+                                }
+                            }, 5L);
+                        }
+                    }
+                }
+            }, 10L);
         }
     }
     
@@ -235,18 +288,173 @@ public class ObjectiveListener implements Listener {
             }
         }
         
-        // Custom Objective (Pickup)
-        List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(p.getUniqueId());
-        if (objs != null) {
-            for (Objective obj : objs) {
-                if (obj.getId().startsWith("custom_")) {
-                    CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
-                    if (data != null && data.getAction().equals("pickup") && type.name().equalsIgnoreCase(data.getTarget())) {
-                        addProgress(p, obj.getId(), event.getItem().getItemStack().getAmount());
-                    }
+        // Custom Objective (Pickup) — only count genuine world pickups (not player/block drops)
+        if (!ignoredPickupItems.contains(event.getItem().getUniqueId())) {
+            addCustomPickupProgress(p, type, event.getItem().getItemStack().getAmount());
+        } else {
+            ignoredPickupItems.remove(event.getItem().getUniqueId());
+        }
+    }
+
+    @EventHandler
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        ignoredPickupItems.add(event.getItemDrop().getUniqueId());
+    }
+
+    @EventHandler
+    public void onBlockDropItem(org.bukkit.event.block.BlockDropItemEvent event) {
+        // Block drops are for mining objectives, not "dapatkan item"
+        for (org.bukkit.entity.Item item : event.getItems()) {
+            ignoredPickupItems.add(item.getUniqueId());
+        }
+    }
+
+    @EventHandler
+    public void onCraftItem(org.bukkit.event.inventory.CraftItemEvent event) {
+        if (!(event.getWhoClicked() instanceof Player p)) return;
+        ItemStack result = event.getCurrentItem();
+        if (result == null || result.getType() == Material.AIR) return;
+
+        int amount = result.getAmount();
+        if (event.isShiftClick()) {
+            // Approximate max craftable amount; counting formula multiplies result stack
+            ItemStack[] matrix = event.getInventory().getMatrix();
+            int maxCrafts = Integer.MAX_VALUE;
+            for (ItemStack ingredient : matrix) {
+                if (ingredient == null || ingredient.getType() == Material.AIR) continue;
+                maxCrafts = Math.min(maxCrafts, ingredient.getAmount());
+            }
+            if (maxCrafts != Integer.MAX_VALUE && maxCrafts > 0) {
+                amount = result.getAmount() * maxCrafts;
+            }
+        }
+        addCustomPickupProgress(p, result.getType(), amount);
+    }
+
+    @EventHandler
+    public void onFurnaceExtract(org.bukkit.event.inventory.FurnaceExtractEvent event) {
+        addCustomPickupProgress(event.getPlayer(), event.getItemType(), event.getItemAmount());
+    }
+
+    private void addCustomPickupProgress(Player player, Material type, int amount) {
+        if (amount <= 0) return;
+        
+        // Track template objectives
+        if (type == Material.IRON_INGOT) addProgress(player, "own_32_iron", amount);
+        if (type == Material.DIAMOND_PICKAXE) setCompleted(player, "own_craft_diamond_pickaxe");
+
+        List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(player.getUniqueId());
+        if (objs == null) return;
+        String matName = TargetListManager.normalize(type.name());
+        for (Objective obj : objs) {
+            if (!obj.getId().startsWith("custom_")) continue;
+            CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
+            if (data != null && data.getAction().equals("pickup")) {
+                String dataTarget = TargetListManager.normalize(data.getTarget());
+                if (matName.equals(dataTarget) || matName.endsWith("_" + dataTarget) || dataTarget.endsWith("_" + matName)) {
+                    addProgress(player, obj.getId(), amount);
                 }
             }
         }
+    }
+
+    private boolean isPlayerStorageInventory(org.bukkit.inventory.Inventory inventory) {
+        if (inventory == null) return true;
+        InventoryType type = inventory.getType();
+        return type == InventoryType.PLAYER
+                || type == InventoryType.CRAFTING
+                || type == InventoryType.CREATIVE;
+    }
+
+    /**
+     * Count items taken from containers (chest, hopper, etc.) while preventing
+     * re-deposit / withdraw loops via a per-material deposit debt.
+     */
+    private void handleContainerObtain(Player player, InventoryClickEvent event) {
+        if (event.getClickedInventory() == null) return;
+
+        // Track deposits: shift-click from player inventory into open container
+        if (isPlayerStorageInventory(event.getClickedInventory())
+                && event.isShiftClick()
+                && event.getCurrentItem() != null
+                && event.getCurrentItem().getType() != Material.AIR
+                && event.getView().getTopInventory() != null
+                && !isPlayerStorageInventory(event.getView().getTopInventory())) {
+            addDepositDebt(player.getUniqueId(), event.getCurrentItem().getType(), event.getCurrentItem().getAmount());
+            return;
+        }
+
+        // Track deposits: place cursor item into container slot
+        if (!isPlayerStorageInventory(event.getClickedInventory())
+                && event.getCursor() != null
+                && event.getCursor().getType() != Material.AIR
+                && !event.isShiftClick()
+                && (event.getCurrentItem() == null
+                    || event.getCurrentItem().getType() == Material.AIR
+                    || event.getCurrentItem().isSimilar(event.getCursor()))) {
+            InventoryType.SlotType slotType = event.getSlotType();
+            if (slotType != InventoryType.SlotType.RESULT) {
+                int placeAmount = event.isRightClick() ? 1 : event.getCursor().getAmount();
+                addDepositDebt(player.getUniqueId(), event.getCursor().getType(), placeAmount);
+                return;
+            }
+        }
+
+        // Taking items out of a container
+        if (isPlayerStorageInventory(event.getClickedInventory())) return;
+        if (event.getCurrentItem() == null || event.getCurrentItem().getType() == Material.AIR) return;
+
+        InventoryType topType = event.getView().getTopInventory().getType();
+        // Crafting / smelting have dedicated events — avoid double counting
+        if (topType == InventoryType.WORKBENCH || topType == InventoryType.CRAFTING
+                || topType == InventoryType.FURNACE || topType == InventoryType.BLAST_FURNACE
+                || topType == InventoryType.SMOKER) {
+            return;
+        }
+
+        InventoryType.SlotType slotType = event.getSlotType();
+        if (slotType != InventoryType.SlotType.CONTAINER
+                && slotType != InventoryType.SlotType.FUEL
+                && slotType != InventoryType.SlotType.RESULT) {
+            return;
+        }
+
+        Material type = event.getCurrentItem().getType();
+        int obtainedAmount;
+        if (event.isShiftClick()) {
+            obtainedAmount = event.getCurrentItem().getAmount();
+        } else if (event.getCursor() != null && event.getCursor().getType() != Material.AIR
+                && !event.getCursor().isSimilar(event.getCurrentItem())) {
+            return; // can't pick up with incompatible cursor
+        } else if (event.isRightClick()) {
+            obtainedAmount = (event.getCurrentItem().getAmount() + 1) / 2;
+        } else {
+            obtainedAmount = event.getCurrentItem().getAmount();
+        }
+
+        int countable = consumeDepositDebt(player.getUniqueId(), type, obtainedAmount);
+        if (countable > 0) {
+            addCustomPickupProgress(player, type, countable);
+        }
+    }
+
+    private void addDepositDebt(UUID playerId, Material type, int amount) {
+        if (amount <= 0) return;
+        depositedItems.computeIfAbsent(playerId, k -> new HashMap<>())
+                .merge(type, amount, Integer::sum);
+    }
+
+    /** @return amount that should count as newly obtained after subtracting deposit debt */
+    private int consumeDepositDebt(UUID playerId, Material type, int amount) {
+        Map<Material, Integer> debtMap = depositedItems.get(playerId);
+        if (debtMap == null) return amount;
+        int debt = debtMap.getOrDefault(type, 0);
+        if (debt <= 0) return amount;
+        int used = Math.min(debt, amount);
+        debt -= used;
+        if (debt <= 0) debtMap.remove(type);
+        else debtMap.put(type, debt);
+        return amount - used;
     }
     
     @EventHandler
@@ -258,27 +466,20 @@ public class ObjectiveListener implements Listener {
             addProgress(p, "own_mine_stone", 1);
         }
         
-        // Custom Objective (Mining)
+        // Custom Objective (Mining Block only — never pickup)
         List<Objective> objs = gameManager.getObjectiveManager().getPlayerObjectives(p.getUniqueId());
         if (objs != null) {
+            String blockName = TargetListManager.normalize(event.getBlock().getType().name());
             for (Objective obj : objs) {
                 if (obj.getId().startsWith("custom_")) {
                     CustomObjectiveData data = gameManager.getObjectiveManager().getCustomDataByObjective(obj);
-                    if (data != null && data.getAction().equals("mining") && event.getBlock().getType().name().equalsIgnoreCase(data.getTarget())) {
-                        addProgress(p, obj.getId(), 1);
+                    if (data != null && data.getAction().equals("mining")) {
+                        String dataTarget = TargetListManager.normalize(data.getTarget());
+                        if (blockName.equals(dataTarget) || blockName.endsWith("_" + dataTarget) || dataTarget.endsWith("_" + blockName)) {
+                            addProgress(p, obj.getId(), 1);
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    @EventHandler
-    public void onPlayerDeath(PlayerDeathEvent event) {
-        Player p = event.getEntity();
-        if (p.getLastDamageCause() instanceof org.bukkit.event.entity.EntityDamageByEntityEvent damageEvent) {
-            if (damageEvent.getDamager() instanceof Warden || damageEvent.getDamager().getType() == EntityType.WARDEN) {
-                setCompleted(p, "one_warden_death");
-                setCompleted(p, "own_warden_death");
             }
         }
     }
@@ -305,8 +506,8 @@ public class ObjectiveListener implements Listener {
 
     @EventHandler
     public void onTame(EntityTameEvent event) {
-        if (event.getOwner() instanceof Player p && event.getEntity() instanceof Cat) {
-            setCompleted(p, "own_tame_cat");
+        if (event.getOwner() instanceof Player p && (event.getEntity() instanceof Cat || event.getEntity() instanceof Wolf)) {
+            setCompleted(p, "own_tame_cat_wolf");
         }
     }
 
@@ -374,7 +575,7 @@ public class ObjectiveListener implements Listener {
         }
         
         // Check biomes
-        Objective biomeObj = getObjective(p, "own_5_biomes");
+        Objective biomeObj = getObjective(p, "one_10_biomes");
         if (biomeObj != null) {
             Biome b = p.getLocation().getBlock().getBiome();
             if (!biomeObj.getMemory().contains(b.name())) {
@@ -433,6 +634,8 @@ public class ObjectiveListener implements Listener {
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (event.getWhoClicked() instanceof Player p) {
+            handleContainerObtain(p, event);
+
             // Check full iron armor after a delay to let the equip happen
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 if (hasObjective(p, "own_iron_armor")) {

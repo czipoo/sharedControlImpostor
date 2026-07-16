@@ -18,6 +18,7 @@ public final class SharedControlImpostor extends JavaPlugin {
     private SettingsManager settingsManager;
     private ObjectiveManager objectiveManager;
     private CommandHandler commandHandler;
+    private TargetListManager targetListManager;
 
     @Override
     public void onEnable() {
@@ -31,6 +32,7 @@ public final class SharedControlImpostor extends JavaPlugin {
         voteManager = new VoteManager(this, gameManager);
         scoreboardManager = new ScoreboardManager(this, gameManager);
         commandHandler = new CommandHandler(this, gameManager);
+        targetListManager = new TargetListManager(this);
 
         // Link managers to GameManager
         gameManager.setTurnManager(turnManager);
@@ -59,6 +61,8 @@ public final class SharedControlImpostor extends JavaPlugin {
         registerCommand("listplayer", commandHandler);
         registerCommand("commandinfo", commandHandler);
         registerCommand("skip", commandHandler);
+        registerCommand("listobjective", commandHandler);
+        registerCommand("editobjective", commandHandler);
 
         getLogger().info("Shared Control Impostor plugin enabled!");
         getLogger().info("Use /commandinfo for a list of commands.");
@@ -70,7 +74,8 @@ public final class SharedControlImpostor extends JavaPlugin {
             String pluginName = getName().toLowerCase();
             java.util.List<String> commandNames = java.util.List.of(
                 "regis", "regisall", "unregis", "start", "meeting",
-                "settimer", "setimpostor", "endgame", "listplayer", "commandinfo", "skip"
+                "settimer", "setimpostor", "endgame", "listplayer", "commandinfo", "skip",
+                "listobjective", "editobjective"
             );
             for (String name : commandNames) {
                 org.bukkit.command.Command c = commandMap.getCommand(pluginName + ":" + name);
@@ -121,5 +126,7 @@ public final class SharedControlImpostor extends JavaPlugin {
     public VoteManager getVoteManager() { return voteManager; }
     public ScoreboardManager getScoreboardManager() { return scoreboardManager; }
     public WorldManager getWorldManager() { return worldManager; }
+    public TargetListManager getTargetListManager() { return targetListManager; }
+    public SettingsManager getSettingsManager() { return settingsManager; }
 
 }

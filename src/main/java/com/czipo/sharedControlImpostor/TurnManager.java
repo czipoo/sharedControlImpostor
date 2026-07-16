@@ -207,12 +207,32 @@ public class TurnManager {
             Player activePlayer = gameManager.getCurrentActivePlayer();
             if (activePlayer == null) return;
 
+            // Prevent infinite spectator loop if active player is somehow eliminated mid-turn
+            if (activePlayer.getGameMode() == GameMode.SPECTATOR) {
+                // Must be done sync on main thread or next tick to avoid concurrent mod
+                Bukkit.getScheduler().runTask(plugin, this::skipCurrentTurn);
+                return;
+            }
+
             for (PlayerData pd : gameManager.getRegisteredPlayers()) {
                 Player player = Bukkit.getPlayer(pd.getPlayerId());
                 if (player == null || player.getUniqueId().equals(activePlayer.getUniqueId())) continue;
 
                 // Sync position and rotation
                 player.teleport(activePlayer.getLocation());
+                
+                if (player.getGameMode() == GameMode.SPECTATOR) {
+                    if (player.getSpectatorTarget() == null || !player.getSpectatorTarget().getUniqueId().equals(activePlayer.getUniqueId())) {
+                        if (!activePlayer.isDead() && activePlayer.isOnline()) {
+                            // Run on next tick to ensure teleport finishes before attaching
+                            Bukkit.getScheduler().runTask(plugin, () -> {
+                                if (player.isOnline() && activePlayer.isOnline()) {
+                                    player.setSpectatorTarget(activePlayer);
+                                }
+                            });
+                        }
+                    }
+                }
                 
                 if (pd.isEliminated()) continue;
 
@@ -229,9 +249,12 @@ public class TurnManager {
                 player.setFoodLevel(activePlayer.getFoodLevel());
                 player.setSaturation(activePlayer.getSaturation());
 
-                // Sync remaining air (if underwater)
-                player.setMaximumAir(activePlayer.getMaximumAir());
-                player.setRemainingAir(activePlayer.getRemainingAir());
+                // Sync remaining air (if underwater) - but don't reset if player was drowning
+                // Only sync if the active player has more air (to prevent drowning reset bug)
+                if (activePlayer.getRemainingAir() > player.getRemainingAir()) {
+                    player.setMaximumAir(activePlayer.getMaximumAir());
+                    player.setRemainingAir(activePlayer.getRemainingAir());
+                }
 
                 // Sync fire ticks
                 player.setFireTicks(activePlayer.getFireTicks());
@@ -283,11 +306,23 @@ public class TurnManager {
     /**
      * Set game modes: active player = SURVIVAL, all others = SPECTATOR.
      * Spectators will be forced to spectate the active player.
+     * If all players are in spectator mode (no active player), trigger gacha turn.
      * @param eliminatedPlayerId No longer used, can be null
      */
     private void setGameModes(UUID eliminatedPlayerId) {
         UUID activeId = gameManager.getCurrentActivePlayerId();
         Player activePlayer = gameManager.getCurrentActivePlayer();
+
+        // Check if all players are in spectator mode (no active player)
+        if (activePlayer == null || activePlayer.getGameMode() == GameMode.SPECTATOR) {
+            // Trigger gacha turn - skip to next player
+            Bukkit.broadcast(Component.text("Semua player spectator! Gacha giliran...").color(NamedTextColor.YELLOW));
+            stopTurnTimer();
+            stopSyncTask();
+            stopSpectatorMode();
+            startNextTurn();
+            return;
+        }
 
         // Iterate over ALL registered players so eliminated players also get their spectator target updated
         for (PlayerData pd : gameManager.getRegisteredPlayers()) {
@@ -311,14 +346,17 @@ public class TurnManager {
                     player.setGameMode(GameMode.SPECTATOR);
                     player.setCollidable(false);
                     player.setInvisible(false);
-                    // Force spectator to spectate the active player (delay by 1 tick to ensure teleport finishes)
+                    // Force spectator to spectate the active player
                     if (activePlayer != null) {
+                        // Teleport first so chunks load
+                        player.teleport(activePlayer.getLocation());
+                        // Delay attach so client has time to process the dimension/chunk load
                         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-                            if (player.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
-                                player.teleport(activePlayer.getLocation());
+                            if (player.isOnline() && activePlayer.isOnline() && player.getGameMode() == GameMode.SPECTATOR) {
+                                // Double check they haven't manually detached if they aren't supposed to
                                 player.setSpectatorTarget(activePlayer);
                             }
-                        }, 10L);
+                        }, 20L); // 1 second delay
                     }
                 }
             }
@@ -649,12 +687,18 @@ public class TurnManager {
                     removeVoteItem(newActive);
                 }
 
-                // Spectators stay in meeting world and DO NOT switch to spectator mode yet
+                // Spectators stay in meeting world and set to spectator mode
                 for (PlayerData pd : gameManager.getActivePlayers()) {
                     if (newActive != null && pd.getPlayerId().equals(newActive.getUniqueId())) continue;
                     Player player = Bukkit.getPlayer(pd.getPlayerId());
                     if (player != null) {
                         removeVoteItem(player);
+                        player.setGameMode(GameMode.SPECTATOR);
+                        player.setCollidable(false);
+                        player.setInvisible(false);
+                        if (newActive != null && newActive.isOnline()) {
+                            player.setSpectatorTarget(newActive);
+                        }
                     }
                 }
 
@@ -700,13 +744,21 @@ public class TurnManager {
                 activePlayer.setCollidable(true);
             }
 
-            // Spectators stay in meeting world and DO NOT switch to spectator mode yet
+            // Set spectators to spectator mode (don't teleport yet - let them wait for first move)
             for (PlayerData pd : gameManager.getActivePlayers()) {
                 if (pd.getPlayerId().equals(activeId)) continue;
                 Player player = Bukkit.getPlayer(pd.getPlayerId());
                 if (player == null) continue;
-                
+
                 removeVoteItem(player);
+                player.setGameMode(GameMode.SPECTATOR);
+                player.setCollidable(false);
+                player.setInvisible(false);
+                
+                // Set spectator target but don't teleport yet
+                if (activePlayer != null && activePlayer.isOnline()) {
+                    player.setSpectatorTarget(activePlayer);
+                }
             }
 
             // Set up turn state - waitingForFirstMove so timer starts when player moves
@@ -717,7 +769,7 @@ public class TurnManager {
 
             // Start waiting action bar
             startWaitingActionBar();
-            
+
             // DO NOT start periodic sync yet, it will start when the player moves
             running = true;
             scoreboardUpdate();

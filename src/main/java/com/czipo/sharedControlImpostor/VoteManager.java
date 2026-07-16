@@ -536,6 +536,14 @@ public class VoteManager {
             }
         }
 
+        // Non-voters count as skip
+        for (PlayerData pd : gameManager.getActivePlayers()) {
+            if (!pd.hasVoted()) {
+                skipVotes.put(pd.getPlayerId(), true);
+                pd.setSkipVote(true);
+            }
+        }
+
         // Calculate vote counts
         Map<UUID, Integer> voteCounts = new HashMap<>();
         int skipCount = 0;
@@ -567,13 +575,13 @@ public class VoteManager {
         broadcastVoteResults(voteCounts, skipCount);
 
         // Determine outcome
+        // Skip wins only if skip has strictly more votes than the top player
         if (skipCount > mostVotes || (mostVotes == 0 && skipCount > 0)) {
-            // Skip vote wins
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 gameManager.returnFromMeeting("Skip Voting | Permainan di lanjutkan", null);
             }, 60L); // 3 second delay
-        } else if (isTie || mostVotedPlayer == null) {
-            // Tie - continue game
+        } else if (isTie || mostVotedPlayer == null || skipCount == mostVotes) {
+            // Tie between players, or skip tied with top player votes
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 gameManager.returnFromMeeting("Voting Seri | Permainan di lanjutkan", null);
             }, 60L);

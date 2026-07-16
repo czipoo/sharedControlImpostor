@@ -156,7 +156,6 @@ public class WorldManager {
         }
         
         cleanupOldSurvivalWorlds(); // Delete all leftover folders on disk
-
         // Create new survival world
         survivalWorld = new WorldCreator(survivalWorldName)
                 .environment(World.Environment.NORMAL)
@@ -167,15 +166,15 @@ public class WorldManager {
 
         if (survivalWorld != null) {
             survivalSpawn = survivalWorld.getSpawnLocation();
-            // Find a safe spawn location
-            survivalSpawn = findSafeSpawn(survivalWorld);
             survivalWorld.setSpawnLocation(survivalSpawn);
+            survivalWorld.setGameRule(GameRule.KEEP_INVENTORY, true);
 
             // Apply locator_bar false to survival world
             survivalWorld.setDifficulty(org.bukkit.Difficulty.NORMAL);
             Bukkit.getScheduler().runTask(plugin, () -> {
                 survivalWorld.setGameRule(GameRule.SEND_COMMAND_FEEDBACK, false);
                 survivalWorld.setGameRule(GameRule.ANNOUNCE_ADVANCEMENTS, false);
+                survivalWorld.setGameRule(GameRule.KEEP_INVENTORY, true);
                 Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "execute in minecraft:" + survivalWorldName + " run gamerule locator_bar false");
                 survivalWorld.setGameRule(GameRule.SEND_COMMAND_FEEDBACK, true);
             });
